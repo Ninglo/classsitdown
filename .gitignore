@@ -1,0 +1,14 @@
+/.DS_Store
+**/.DS_Store
+
+node_modules/
+**/node_modules/
+
+.vite/
+**/.vite/
+
+dist/
+**/dist/
+
+*.tsbuildinfo
+
