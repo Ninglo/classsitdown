@@ -25,7 +25,7 @@ export default function Welcome({ teacherName, classes, onSelectClass }: Props) 
         <div className="welcome-greeting">
           <div className="greeting-text">
             <h1>Welcome, {displayName}</h1>
-            <p className="slogan">Super Amber is here! · I will help you</p>
+            <p className="slogan">ClassSitDown · I will help you</p>
           </div>
         </div>
         <div className="week-badge">

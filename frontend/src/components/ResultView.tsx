@@ -155,7 +155,7 @@ export default function ResultView({ results, students, bonusItems, classCode, w
           </table>
         </div>
 
-        <div className="result-footer">Super Amber is here! · I will help you</div>
+        <div className="result-footer">ClassSitDown · I will help you</div>
       </div>
     </div>
   );

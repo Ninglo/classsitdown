@@ -80,11 +80,11 @@ export default function Login({ onLogin }: Props) {
   return (
     <div className="login-wrap">
       <div className="login-box card fade-in">
-        <div className="login-logo">
+          <div className="login-logo">
           <div className="logo-leaf">🌿</div>
           <div className="login-brand">
-            <span className="brand-main">Super Amber is here!</span>
-            <span className="brand-sub">I will help you</span>
+            <span className="brand-main">ClassSitDown</span>
+            <span className="brand-sub">班级发放助手</span>
           </div>
         </div>
 

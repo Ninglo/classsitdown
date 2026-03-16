@@ -1,6 +1,6 @@
 # ClassSitDown · Project Notes
 > Last updated: 2026-03-10  
-> Slogan: **Sup Embrace Here · I will help you**
+> Slogan: **ClassSitDown · I will help you**
 
 ---
 
@@ -33,7 +33,7 @@
 
 ---
 
-## 4. 颜色方案（来自 plants 项目）
+## 4. 颜色方案（当前绿色主题）
 
 ```css
 --green:        #7ba862
