@@ -66,15 +66,24 @@
   color: var(--gray-800);
 }
 
+.section-title-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .section-count {
   font-size: 13px;
   font-weight: 400;
   color: var(--gray-500);
 }
 
+.schedule-btn { font-size: 12px !important; }
+.schedule-btn.active { background: var(--green-light) !important; border-color: var(--green) !important; color: var(--green-dark) !important; }
+
 .class-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 16px;
 }
 
@@ -83,14 +92,15 @@
   backdrop-filter: blur(10px);
   border: 1.5px solid rgba(123,168,98,0.2);
   border-radius: var(--radius);
-  padding: 28px 20px;
+  padding: 24px 16px 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   transition: all 0.2s;
   box-shadow: var(--shadow);
   cursor: pointer;
+  width: 100%;
 }
 .class-card:hover {
   transform: translateY(-3px);
@@ -100,10 +110,16 @@
 }
 
 .class-code {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 700;
   color: var(--green-dark);
   letter-spacing: 1px;
+}
+
+.class-days {
+  font-size: 11px;
+  color: var(--green);
+  font-weight: 500;
 }
 
 .class-action {
@@ -158,4 +174,42 @@
 .hint-text p {
   font-size: 13px;
   color: var(--gray-600);
+}
+
+.guide-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.guide-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 14px 20px;
+  background: none;
+  border: none;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--gray-700);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+.guide-toggle:hover { background: var(--green-light); }
+
+.guide-toggle-icon { font-size: 16px; }
+
+.guide-toggle-arrow {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--gray-400);
+}
+
+.guide-frame {
+  width: 100%;
+  height: 620px;
+  border: none;
+  border-top: 1px solid var(--gray-200);
+  display: block;
 }

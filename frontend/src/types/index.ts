@@ -41,25 +41,55 @@ export interface MPBreakdown {
   total: number;
 }
 
-export type SchemeId = 'scheme1' | 'scheme2' | 'custom';
+export type SchemeId = string;
 
-export interface CustomRuleEntry {
-  resourceType: string;
-  field: string;
-  condition: string;
-  amount: number;
+export interface RuleTemplate {
+  id: string;
+  label: string;
+  group: string;
+  hasThreshold: boolean;
+  defaultAmount: number;
+  defaultThreshold: number;
 }
 
-export interface SchemeConfig {
-  id: SchemeId;
+export interface SchemeRuleConfig {
+  templateId: string;
+  enabled: boolean;
+  amount: number;
+  threshold: number;
+}
+
+export interface SavedCustomScheme {
+  id: string;
   name: string;
-  description: string;
-  customRules?: CustomRuleEntry[];
+  rules: SchemeRuleConfig[];
+  createdAt: number;
 }
 
 export type Module = '基础落实' | '每日开口' | '课堂参与' | '个性化奖励';
 
-export type AppScreen = 'login' | 'welcome' | 'flow';
+export interface BonusHistoryRecord {
+  classCode: string;
+  week: number;
+  studentNames: string[];
+  amount: number;
+  timestamp: number;
+}
+
+export interface BonusHistoryEntry {
+  bonusName: string;
+  lastAmount: number;
+  records: BonusHistoryRecord[];
+}
+
+export type AppScreen = 'login' | 'welcome' | 'hub' | 'flow';
+
+export type DayOfWeek = '周一' | '周二' | '周三' | '周四' | '周五' | '周六' | '周日';
+
+export interface ClassSchedule {
+  classCode: string;
+  days: DayOfWeek[];
+}
 
 export interface AppState {
   screen: AppScreen;

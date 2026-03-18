@@ -1,5 +1,8 @@
+import { useState } from 'react';
 import type { ClassInfo } from '../types';
 import { getCurrentWeek, getWeekRange, formatDateShort } from '../utils/weekNumber';
+import { getClassDays, sortClassesBySchedule } from '../utils/classSchedule';
+import ScheduleEditor from './ScheduleEditor';
 import './Welcome.css';
 
 interface Props {
@@ -11,6 +14,9 @@ interface Props {
 export default function Welcome({ teacherName, classes, onSelectClass }: Props) {
   const week = getCurrentWeek();
   const { start, end } = getWeekRange(week);
+  const [showGuide, setShowGuide] = useState(false);
+  const [showScheduleEditor, setShowScheduleEditor] = useState(false);
+  const [scheduleVersion, setScheduleVersion] = useState(0);
 
   const firstName = teacherName.replace(/^(ms\.?|mr\.?|mrs\.?)/i, '').trim().split(/[\s_]/)[0];
   const displayName = firstName.charAt(0).toUpperCase() + firstName.slice(1);
@@ -19,13 +25,15 @@ export default function Welcome({ teacherName, classes, onSelectClass }: Props) 
     onSelectClass({ id: 'manual', name: '手动输入' });
   }
 
+  const sortedClasses = sortClassesBySchedule(classes);
+
   return (
     <div className="welcome-wrap fade-in">
       <header className="welcome-header">
         <div className="welcome-greeting">
           <div className="greeting-text">
             <h1>Welcome, {displayName}</h1>
-            <p className="slogan">ClassSitDown · I will help you</p>
+            <p className="slogan">Super Amber is here! · I will help you</p>
           </div>
         </div>
         <div className="week-badge">
@@ -39,19 +47,43 @@ export default function Welcome({ teacherName, classes, onSelectClass }: Props) 
           <>
             <div className="section-title">
               <span>你的班级</span>
-              <span className="section-count">{classes.length} 个班级</span>
-            </div>
-            <div className="class-grid">
-              {classes.map((cls) => (
+              <div className="section-title-right">
+                <span className="section-count">{classes.length} 个班级</span>
                 <button
-                  key={cls.id}
-                  className="class-card"
-                  onClick={() => onSelectClass(cls)}
+                  className={`btn btn-ghost btn-sm schedule-btn${showScheduleEditor ? ' active' : ''}`}
+                  onClick={() => setShowScheduleEditor((v) => !v)}
                 >
-                  <div className="class-code">{cls.name}</div>
-                  <div className="class-action">开始发放 →</div>
+                  📅 {showScheduleEditor ? '收起' : '管理上课时间'}
                 </button>
-              ))}
+              </div>
+            </div>
+
+            {showScheduleEditor && (
+              <ScheduleEditor
+                key={scheduleVersion}
+                classes={classes}
+                onClose={() => setShowScheduleEditor(false)}
+                onSaved={() => setScheduleVersion((v) => v + 1)}
+              />
+            )}
+
+            <div className="class-grid">
+              {sortedClasses.map((cls) => {
+                const days = getClassDays(cls.name);
+                return (
+                  <button
+                    key={cls.id}
+                    className="class-card"
+                    onClick={() => onSelectClass(cls)}
+                  >
+                    <div className="class-code">{cls.name}</div>
+                    {days.length > 0 && (
+                      <div className="class-days">{days.join(' · ')}</div>
+                    )}
+                    <div className="class-action">进入 →</div>
+                  </button>
+                );
+              })}
             </div>
           </>
         ) : (
@@ -62,7 +94,7 @@ export default function Welcome({ teacherName, classes, onSelectClass }: Props) 
               <p>班级号将在上传文件时自动从文件名中读取</p>
             </div>
             <button className="btn btn-primary" onClick={handleManualStart}>
-              直接开始发放 →
+              直接开始 →
             </button>
           </div>
         )}
@@ -71,8 +103,24 @@ export default function Welcome({ teacherName, classes, onSelectClass }: Props) 
           <div className="hint-icon">💡</div>
           <div className="hint-text">
             <strong>操作流程</strong>
-            <p>选择班级 → 勾选发放模块 → 上传数据文件 → 确认明细 → 生成图片 & Excel</p>
+            <p>选择班级 → 选择功能 → 上传数据文件 → 确认明细 → 生成图片 & Excel</p>
           </div>
+        </div>
+
+        <div className="guide-panel card">
+          <button className="guide-toggle" onClick={() => setShowGuide((v) => !v)}>
+            <span className="guide-toggle-icon">📖</span>
+            <span>使用说明</span>
+            <span className="guide-toggle-arrow">{showGuide ? '▲' : '▼'}</span>
+          </button>
+          {showGuide && (
+            <iframe
+              src="/guide.html"
+              className="guide-frame"
+              title="使用说明"
+              sandbox="allow-same-origin"
+            />
+          )}
         </div>
       </div>
     </div>

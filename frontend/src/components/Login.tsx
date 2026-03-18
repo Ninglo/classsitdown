@@ -14,8 +14,9 @@ export default function Login({ onLogin }: Props) {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const saved = localStorage.getItem('amber_username');
-    if (saved) setUsername(saved);
+    const savedUser = localStorage.getItem('amber_username');
+    if (savedUser) setUsername(savedUser);
+    localStorage.removeItem('amber_password');
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -80,11 +81,11 @@ export default function Login({ onLogin }: Props) {
   return (
     <div className="login-wrap">
       <div className="login-box card fade-in">
-          <div className="login-logo">
+        <div className="login-logo">
           <div className="logo-leaf">🌿</div>
           <div className="login-brand">
-            <span className="brand-main">ClassSitDown</span>
-            <span className="brand-sub">班级发放助手</span>
+            <span className="brand-main">Super Amber is here!</span>
+            <span className="brand-sub">I will help you</span>
           </div>
         </div>
 

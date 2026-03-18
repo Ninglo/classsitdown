@@ -1,8 +1,11 @@
-import { useState, useRef } from 'react';
-import type { ClassInfo, Module, StudentData, MPBreakdown, SchemeId, BonusItem } from '../types';
-import { parseBasicFile, parseDailyCheckFile, generateOutputExcel } from '../utils/parseExcel';
+import { useState, useRef, useEffect } from 'react';
+import type { ClassInfo, Module, StudentData, MPBreakdown, SchemeId, BonusItem, SavedCustomScheme } from '../types';
+import { parseBasicFile, parseDailyCheckFile } from '../utils/parseExcel';
 import { calculateMP, SCHEMES } from '../utils/calculateMP';
 import { getCurrentWeek } from '../utils/weekNumber';
+import { loadSavedSchemes, saveScheme, deleteScheme } from '../utils/customScheme';
+import { saveBonusRecord, getBonusNames, getLastAmount, getHistoryForBonus } from '../utils/bonusHistory';
+import CustomSchemeEditor from './CustomSchemeEditor';
 import ResultView from './ResultView';
 import './DistributionFlow.css';
 
@@ -28,12 +31,15 @@ const MODULE_REQUIRED: Record<Module, boolean> = {
 };
 
 export default function DistributionFlow({ classInfo, onBack }: Props) {
+  const isManual = classInfo.id === 'manual';
+  const [manualCode, setManualCode] = useState('');
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedModules, setSelectedModules] = useState<Set<Module>>(new Set(['基础落实']));
   const [basicFile, setBasicFile] = useState<File | null>(null);
   const [dailyFile, setDailyFile] = useState<File | null>(null);
   const [students, setStudents] = useState<StudentData[]>([]);
   const [scheme, setScheme] = useState<SchemeId>('scheme1');
+  const [customSchemeData, setCustomSchemeData] = useState<SavedCustomScheme | undefined>();
   const [dailyRate, setDailyRate] = useState(0.1);
   const [defaultParticipation, setDefaultParticipation] = useState(0.2);
   const [bonusItems, setBonusItems] = useState<BonusItem[]>([]);
@@ -41,6 +47,7 @@ export default function DistributionFlow({ classInfo, onBack }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const week = getCurrentWeek();
+  const displayCode = isManual ? (manualCode || '手动输入') : classInfo.name;
 
   function toggleModule(m: Module) {
     if (MODULE_REQUIRED[m]) return;
@@ -83,7 +90,13 @@ export default function DistributionFlow({ classInfo, onBack }: Props) {
       ...s,
       bonusItems: bonusItems.filter((b) => b.studentIds.includes(s.studentId)),
     }));
-    const results = calculateMP(studWithBonus, scheme, dailyRate, selectedModules);
+    const results = calculateMP(studWithBonus, scheme, dailyRate, selectedModules, customSchemeData);
+    bonusItems.forEach((b) => {
+      const names = students
+        .filter((s) => b.studentIds.includes(s.studentId))
+        .map((s) => s.englishName);
+      saveBonusRecord(b.name, displayCode, week, names, b.amount);
+    });
     setMpResults(results);
     setStep(4);
   }
@@ -100,7 +113,17 @@ export default function DistributionFlow({ classInfo, onBack }: Props) {
       <div className="flow-topbar">
         <button className="back-btn" onClick={onBack}>← 返回</button>
         <div className="flow-class-tag">
-          <span className="flow-class-code">{classInfo.name}</span>
+          {isManual ? (
+            <input
+              className="flow-class-input"
+              type="text"
+              placeholder="输入班级号"
+              value={manualCode}
+              onChange={(e) => setManualCode(e.target.value)}
+            />
+          ) : (
+            <span className="flow-class-code">{classInfo.name}</span>
+          )}
           <span className="flow-week">Week {week}</span>
         </div>
       </div>
@@ -142,11 +165,12 @@ export default function DistributionFlow({ classInfo, onBack }: Props) {
         <StepPreview
           students={students}
           scheme={scheme}
+          customSchemeData={customSchemeData}
           dailyRate={dailyRate}
           defaultParticipation={defaultParticipation}
           bonusItems={bonusItems}
           modules={selectedModules}
-          onSchemeChange={setScheme}
+          onSchemeChange={(id, data) => { setScheme(id); setCustomSchemeData(data); }}
           onDailyRateChange={setDailyRate}
           onParticipationChange={(sid, val) => {
             setStudents((prev) =>
@@ -164,6 +188,8 @@ export default function DistributionFlow({ classInfo, onBack }: Props) {
           }}
           onAddBonus={(b) => setBonusItems((prev) => [...prev, b])}
           onRemoveBonus={(i) => setBonusItems((prev) => prev.filter((_, idx) => idx !== i))}
+          classCode={displayCode}
+          week={week}
           onBack={() => setStep(2)}
           onGenerate={applyResults}
         />
@@ -173,7 +199,7 @@ export default function DistributionFlow({ classInfo, onBack }: Props) {
           results={mpResults}
           students={students}
           bonusItems={bonusItems}
-          classCode={classInfo.name}
+          classCode={displayCode}
           week={week}
           onBack={() => setStep(3)}
         />
@@ -310,6 +336,7 @@ function UploadField({
 function StepPreview({
   students,
   scheme,
+  customSchemeData,
   dailyRate,
   defaultParticipation,
   bonusItems,
@@ -321,22 +348,27 @@ function StepPreview({
   onDefaultParticipationChange,
   onAddBonus,
   onRemoveBonus,
+  classCode,
+  week,
   onBack,
   onGenerate,
 }: {
   students: StudentData[];
   scheme: SchemeId;
+  customSchemeData: SavedCustomScheme | undefined;
   dailyRate: number;
   defaultParticipation: number;
   bonusItems: BonusItem[];
   modules: Set<Module>;
-  onSchemeChange: (s: SchemeId) => void;
+  onSchemeChange: (id: SchemeId, data?: SavedCustomScheme) => void;
   onDailyRateChange: (v: number) => void;
   onParticipationChange: (sid: string, val: number) => void;
   onBulkParticipation: (sids: string[], val: number) => void;
   onDefaultParticipationChange: (val: number) => void;
   onAddBonus: (b: BonusItem) => void;
   onRemoveBonus: (i: number) => void;
+  classCode: string;
+  week: number;
   onBack: () => void;
   onGenerate: () => void;
 }) {
@@ -346,6 +378,16 @@ function StepPreview({
   const [bonusAmount, setBonusAmount] = useState('');
   const [bonusStudents, setBonusStudents] = useState<Set<string>>(new Set());
   const [bonusError, setBonusError] = useState('');
+  const [expandedHistory, setExpandedHistory] = useState<number | null>(null);
+  const [bonusNameSuggestions] = useState<string[]>(() => getBonusNames());
+
+  const [savedSchemes, setSavedSchemes] = useState<SavedCustomScheme[]>([]);
+  const [showEditor, setShowEditor] = useState(false);
+  const [editingScheme, setEditingScheme] = useState<SavedCustomScheme | undefined>();
+
+  useEffect(() => {
+    setSavedSchemes(loadSavedSchemes());
+  }, []);
 
   function toggleStudent(sid: string) {
     setSelectedSids((prev) => {
@@ -377,6 +419,31 @@ function StepPreview({
     setBonusStudents(new Set());
   }
 
+  function handleSaveCustomScheme(s: SavedCustomScheme) {
+    saveScheme(s);
+    const updated = loadSavedSchemes();
+    setSavedSchemes(updated);
+    setShowEditor(false);
+    setEditingScheme(undefined);
+    onSchemeChange(s.id, s);
+  }
+
+  function handleDeleteScheme(id: string) {
+    deleteScheme(id);
+    setSavedSchemes(loadSavedSchemes());
+    if (scheme === id) onSchemeChange('scheme1', undefined);
+  }
+
+  function getSchemeDescription(): string {
+    const builtin = SCHEMES.find((s) => s.id === scheme);
+    if (builtin) return builtin.description;
+    if (customSchemeData) {
+      const enabled = customSchemeData.rules.filter((r) => r.enabled);
+      return `自定义方案 · ${enabled.length} 条规则已启用`;
+    }
+    return '';
+  }
+
   return (
     <div className="step-card card">
       <h3 className="step-heading">确认发放明细</h3>
@@ -390,15 +457,47 @@ function StepPreview({
                 <button
                   key={s.id}
                   className={`scheme-tab ${scheme === s.id ? 'active' : ''}`}
-                  onClick={() => onSchemeChange(s.id)}
+                  onClick={() => { onSchemeChange(s.id, undefined); setShowEditor(false); }}
                 >
                   {s.name}
                 </button>
               ))}
+              {savedSchemes.map((s) => (
+                <div key={s.id} className="scheme-tab-custom-wrap">
+                  <button
+                    className={`scheme-tab scheme-tab-custom ${scheme === s.id ? 'active' : ''}`}
+                    onClick={() => { onSchemeChange(s.id, s); setShowEditor(false); }}
+                  >
+                    {s.name}
+                  </button>
+                  <button
+                    className="scheme-tab-edit"
+                    title="编辑方案"
+                    onClick={() => { setEditingScheme(s); setShowEditor(true); onSchemeChange(s.id, s); }}
+                  >✎</button>
+                  <button
+                    className="scheme-tab-del"
+                    title="删除方案"
+                    onClick={() => handleDeleteScheme(s.id)}
+                  >×</button>
+                </div>
+              ))}
+              <button
+                className="scheme-tab-new"
+                onClick={() => { setEditingScheme(undefined); setShowEditor((v) => !v); }}
+              >
+                {showEditor && !editingScheme ? '收起' : '+ 新建方案'}
+              </button>
             </div>
-            <p className="scheme-desc">
-              {SCHEMES.find((s) => s.id === scheme)?.description}
-            </p>
+            <p className="scheme-desc">{getSchemeDescription()}</p>
+
+            {showEditor && (
+              <CustomSchemeEditor
+                existing={editingScheme}
+                onSave={handleSaveCustomScheme}
+                onCancel={() => { setShowEditor(false); setEditingScheme(undefined); }}
+              />
+            )}
           </div>
         </div>
         {modules.has('每日开口') && (
@@ -465,7 +564,22 @@ function StepPreview({
         <div className="bonus-section">
           <div className="section-mini-title">个性化奖励</div>
           <div className="bonus-add-row">
-            <input className="input-field" placeholder="奖励名称" value={bonusName} onChange={(e) => setBonusName(e.target.value)} style={{ flex: 2 }} />
+            <input
+              className="input-field"
+              placeholder="奖励名称"
+              value={bonusName}
+              list="bonus-name-list"
+              onChange={(e) => {
+                const v = e.target.value;
+                setBonusName(v);
+                const last = getLastAmount(v);
+                if (last !== null && bonusAmount === '') setBonusAmount(String(last));
+              }}
+              style={{ flex: 2 }}
+            />
+            <datalist id="bonus-name-list">
+              {bonusNameSuggestions.map((n) => <option key={n} value={n} />)}
+            </datalist>
             <input className="input-field" placeholder="MP" type="number" step="0.1" value={bonusAmount} onChange={(e) => setBonusAmount(e.target.value)} style={{ width: 80 }} />
           </div>
           <div className="student-select-list">
@@ -482,12 +596,36 @@ function StepPreview({
           </button>
           {bonusItems.length > 0 && (
             <div className="bonus-list">
-              {bonusItems.map((b, i) => (
-                <div key={i} className="bonus-tag">
-                  <span>{b.name}: {b.amount} MP × {b.studentIds.length}人</span>
-                  <button onClick={() => onRemoveBonus(i)}>×</button>
-                </div>
-              ))}
+              {bonusItems.map((b, i) => {
+                const hist = getHistoryForBonus(b.name);
+                const isOpen = expandedHistory === i;
+                return (
+                  <div key={i} className="bonus-tag-wrap">
+                    <div className="bonus-tag">
+                      <span>{b.name}: {b.amount} MP × {b.studentIds.length}人</span>
+                      {hist.length > 0 && (
+                        <button
+                          className="bonus-hist-btn"
+                          title="查看历史"
+                          onClick={() => setExpandedHistory(isOpen ? null : i)}
+                        >📋</button>
+                      )}
+                      <button onClick={() => { onRemoveBonus(i); if (expandedHistory === i) setExpandedHistory(null); }}>×</button>
+                    </div>
+                    {isOpen && hist.length > 0 && (
+                      <div className="bonus-history-panel">
+                        <div className="bonus-history-title">历史记录</div>
+                        {hist.map((rec, ri) => (
+                          <div key={ri} className="bonus-history-row">
+                            <span className="bonus-history-meta">Week {rec.week} · {rec.classCode}</span>
+                            <span>{rec.studentNames.join('、')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

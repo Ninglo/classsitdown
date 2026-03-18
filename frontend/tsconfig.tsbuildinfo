@@ -1,1 +1,0 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/components/distributionflow.tsx","./src/components/login.tsx","./src/components/resultview.tsx","./src/components/welcome.tsx","./src/types/index.ts","./src/utils/calculatemp.ts","./src/utils/parseexcel.ts","./src/utils/weeknumber.ts"],"version":"5.9.3"}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Login from './components/Login';
 import Welcome from './components/Welcome';
+import ClassHub from './components/ClassHub';
 import DistributionFlow from './components/DistributionFlow';
 import type { AppScreen, ClassInfo } from './types';
 
@@ -18,7 +19,15 @@ export default function App() {
 
   function handleSelectClass(cls: ClassInfo) {
     setSelectedClass(cls);
+    setScreen('hub');
+  }
+
+  function handleSelectFlow() {
     setScreen('flow');
+  }
+
+  function handleBackToHub() {
+    setScreen('hub');
   }
 
   function handleBackToWelcome() {
@@ -38,10 +47,17 @@ export default function App() {
           onSelectClass={handleSelectClass}
         />
       )}
+      {screen === 'hub' && selectedClass && (
+        <ClassHub
+          classInfo={selectedClass}
+          onSelectFlow={handleSelectFlow}
+          onBack={handleBackToWelcome}
+        />
+      )}
       {screen === 'flow' && selectedClass && (
         <DistributionFlow
           classInfo={selectedClass}
-          onBack={handleBackToWelcome}
+          onBack={handleBackToHub}
         />
       )}
     </>

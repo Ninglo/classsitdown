@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Super Amber · 使用说明</title>
+  <style>
+    @font-face {
+      font-family: 'SmileySans';
+      src: url('/fonts/SmileySans-Oblique.ttf.woff2') format('woff2');
+      font-weight: normal;
+      font-style: normal;
+      font-display: swap;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'SmileySans', -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif;
+      background: #f7faf2;
+      color: #2d3a2e;
+      line-height: 1.7;
+    }
+    .hero {
+      background: linear-gradient(135deg, #e8f3df 0%, #f0f6e8 50%, #e3eef8 100%);
+      padding: 40px 24px 32px;
+      text-align: center;
+      border-bottom: 1px solid #d6e8c8;
+    }
+    .hero-emoji { font-size: 40px; margin-bottom: 12px; }
+    .hero h1 { font-size: 22px; font-weight: 700; color: #3a5a2a; }
+    .hero .tagline { font-size: 13px; color: #5a8a42; margin-top: 4px; font-weight: 500; }
+    .hero .promo {
+      max-width: 640px; margin: 16px auto 0;
+      font-size: 13px; color: #4a5e4a;
+      background: rgba(255,255,255,0.7); border-radius: 10px;
+      padding: 14px 18px; text-align: left; border: 1px solid #c8ddb8;
+    }
+    .hero .promo p + p { margin-top: 6px; }
+    .content { max-width: 720px; margin: 0 auto; padding: 28px 20px 60px; }
+    .section-header {
+      font-size: 11px; font-weight: 600; color: #7ba862;
+      letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 18px;
+    }
+    .step {
+      background: #fff; border: 1px solid #deecd0; border-radius: 14px;
+      padding: 22px; margin-bottom: 18px;
+      box-shadow: 0 2px 8px rgba(90,138,66,0.06);
+    }
+    .step-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+    .step-num {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: #7ba862; color: #fff; font-size: 13px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .step-title { font-size: 15px; font-weight: 600; color: #2d4a1e; }
+    .step-desc { font-size: 13px; color: #607060; margin-bottom: 14px; }
+    .mock {
+      background: #fafcf8; border: 1.5px solid #d0e4c0; border-radius: 10px;
+      padding: 16px; font-size: 12px; color: #3a4a3a;
+    }
+    .mock-title {
+      font-size: 10px; font-weight: 600; color: #9ab88a;
+      letter-spacing: 0.08em; margin-bottom: 12px; text-transform: uppercase;
+    }
+    .mock-card {
+      background: #fff; border: 1px solid #e0ecd8; border-radius: 9px;
+      padding: 16px; max-width: 300px; margin: 0 auto;
+    }
+    .mock-label { font-size: 11px; color: #7a8a7a; margin-bottom: 3px; }
+    .mock-input {
+      width: 100%; border: 1.5px solid #c8ddb8; border-radius: 6px;
+      padding: 7px 10px; font-size: 12px; margin-bottom: 8px;
+      color: #5a6a5a; background: #f7faf2;
+    }
+    .mock-btn {
+      display: block; width: 100%; background: #7ba862; color: #fff;
+      border: none; border-radius: 7px; padding: 9px; font-size: 12px;
+      font-weight: 600; text-align: center; cursor: default;
+    }
+    .mock-btn-secondary {
+      display: block; width: 100%; background: transparent; color: #7ba862;
+      border: none; border-radius: 7px; padding: 7px; font-size: 11px;
+      text-align: center; cursor: default; margin-top: 5px;
+    }
+    .mock-class-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 8px; }
+    .mock-class-card {
+      border: 1.5px solid #c8ddb8; border-radius: 9px;
+      padding: 10px 8px; text-align: center; background: #f7faf2;
+    }
+    .mock-class-name { font-size: 12px; font-weight: 600; color: #3a5a2a; }
+    .mock-class-action { font-size: 10px; color: #7ba862; margin-top: 3px; }
+    .mock-module-list { display: flex; flex-direction: column; gap: 6px; }
+    .mock-module {
+      display: flex; align-items: center; gap: 8px;
+      background: #fff; border: 1.5px solid #d0e4c0; border-radius: 8px; padding: 8px 12px;
+    }
+    .mock-module.required { border-color: #7ba862; background: #f2f9ec; }
+    .mock-checkbox {
+      width: 16px; height: 16px; border-radius: 3px;
+      border: 2px solid #7ba862; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; color: #7ba862; font-weight: 700;
+    }
+    .mock-checkbox.unchecked { border-color: #b0c8a0; color: transparent; }
+    .mock-module-name { font-size: 12px; font-weight: 600; }
+    .mock-module-tag {
+      margin-left: auto; font-size: 9px; color: #5a8a42;
+      background: #e0f0d0; border-radius: 3px; padding: 1px 5px;
+    }
+    .mock-upload-zone {
+      border: 2px dashed #b0d0a0; border-radius: 9px; padding: 14px;
+      text-align: center; color: #7a9a6a; font-size: 12px;
+      background: #f7faf2; margin-bottom: 8px;
+    }
+    .mock-upload-icon { font-size: 20px; margin-bottom: 4px; }
+    .mock-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .mock-table th {
+      background: #e8f3df; color: #4a6a3a; padding: 6px 8px;
+      text-align: left; font-weight: 600; border-bottom: 1px solid #c8ddb8;
+    }
+    .mock-table td { padding: 6px 8px; border-bottom: 1px solid #eff5e8; color: #3a4a3a; }
+    .mock-table tr:last-child td { border-bottom: none; }
+    .mock-export-row { display: flex; gap: 8px; margin-top: 12px; }
+    .mock-export-btn { flex: 1; padding: 9px; border-radius: 7px; text-align: center; font-size: 12px; font-weight: 600; }
+    .mock-export-btn.green { background: #7ba862; color: #fff; }
+    .mock-export-btn.outline { border: 1.5px solid #7ba862; color: #5a7a42; background: #f2f9ec; }
+    .callout {
+      display: flex; align-items: flex-start; gap: 8px; margin-top: 12px;
+      background: #fffbe8; border: 1px solid #e8d878; border-radius: 7px;
+      padding: 9px 12px; font-size: 12px; color: #5a4a20;
+    }
+    .callout-icon { flex-shrink: 0; font-size: 14px; }
+    .step-connector { text-align: center; color: #a8c898; font-size: 18px; margin: -6px 0; }
+    .tip-box {
+      background: #f0f6e8; border: 1px solid #c8ddb8; border-radius: 9px;
+      padding: 14px 18px; font-size: 13px; color: #4a6a3a; margin-top: 24px;
+    }
+    .tip-box strong { color: #3a5a2a; }
+    @media (max-width: 520px) {
+      .mock-class-grid { grid-template-columns: repeat(2,1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-emoji">🧑‍🎨</div>
+  <h1>Super Amber is here!</h1>
+  <div class="tagline">C&amp;F School · MP 发放助手</div>
+  <div class="promo">
+    <p>老师们每周发放 minipin 的时间，本可以用来做更重要的事。Super Amber 把繁琐的数据整理交给自动化——上传文件、确认数字、一键导出，全程不超过 3 分钟。</p>
+    <p>不用再手动对表、不用逐个核算，基础落实、每日开口、课堂参与、个性化奖励，各模块数据自动汇总，结果直接能上传教务系统，或发进班级群公示。</p>
+    <p style="color:#7ba862; font-weight:500;">更多功能持续完善中，敬请期待。</p>
+  </div>
+</div>
+
+<div class="content">
+  <div class="section-header">使用步骤</div>
+
+  <div class="step">
+    <div class="step-head"><div class="step-num">1</div><div class="step-title">登录教务系统</div></div>
+    <div class="step-desc">输入你在 C&amp;F 教务系统的账号和密码，点击「连接教务系统」。系统会自动拉取你名下的班级列表（约需 15 秒）。<br>如果暂时不需要自动加载班级，可以点击下方「暂时跳过」直接进入。</div>
+    <div class="mock">
+      <div class="mock-title">界面示意 · 登录页</div>
+      <div class="mock-card">
+        <div style="text-align:center; margin-bottom:12px;"><div style="font-size:20px;">🌿</div><div style="font-size:13px; font-weight:700; color:#3a5a2a;">Super Amber is here!</div><div style="font-size:10px; color:#7ba862;">连接教务系统</div></div>
+        <div class="mock-label">账号名</div><div class="mock-input">请输入教务系统账号</div>
+        <div class="mock-label">密码</div><div class="mock-input" style="margin-bottom:12px;">••••••••</div>
+        <div class="mock-btn">连接教务系统 →　⬅ 点这里</div>
+        <div class="mock-btn-secondary">暂时跳过，手动操作</div>
+      </div>
+    </div>
+    <div class="callout"><span class="callout-icon">💡</span>账号和密码与你平时登录 cnfadmin.cnfschool.net 的一样。</div>
+  </div>
+
+  <div class="step-connector">↓</div>
+
+  <div class="step">
+    <div class="step-head"><div class="step-num">2</div><div class="step-title">选择班级</div></div>
+    <div class="step-desc">登录成功后，页面显示你名下的所有班级。点击对应的班级卡片，进入该班级的 MP 发放流程。</div>
+    <div class="mock">
+      <div class="mock-title">界面示意 · 班级列表</div>
+      <div style="font-size:11px; color:#7a8a7a; margin-bottom:6px;">你的班级 · 3 个班级</div>
+      <div class="mock-class-grid">
+        <div class="mock-class-card" style="border-color:#7ba862; background:#f2f9ec;"><div class="mock-class-name">E102</div><div class="mock-class-action">开始发放 →</div><div style="font-size:9px; color:#7ba862; margin-top:3px;">⬅ 点击</div></div>
+        <div class="mock-class-card"><div class="mock-class-name">E205</div><div class="mock-class-action">开始发放 →</div></div>
+        <div class="mock-class-card"><div class="mock-class-name">E301</div><div class="mock-class-action">开始发放 →</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step-connector">↓</div>
+
+  <div class="step">
+    <div class="step-head"><div class="step-num">3</div><div class="step-title">勾选本次发放模块</div></div>
+    <div class="step-desc">选择本次要计入的发放模块。「基础落实」为必选项，其余模块根据本周实际情况勾选。选好后点击「下一步」。</div>
+    <div class="mock">
+      <div class="mock-title">界面示意 · 发放模块选择</div>
+      <div class="mock-module-list">
+        <div class="mock-module required"><div class="mock-checkbox">✓</div><div><div class="mock-module-name">基础落实</div><div style="font-size:10px; color:#7a9a6a;">上传学生个人数据 xlsx</div></div><div class="mock-module-tag">必选</div></div>
+        <div class="mock-module"><div class="mock-checkbox">✓</div><div><div class="mock-module-name">每日开口</div><div style="font-size:10px; color:#7a9a6a;">上传打卡情况 xlsx</div></div></div>
+        <div class="mock-module"><div class="mock-checkbox unchecked">✓</div><div><div class="mock-module-name">课堂参与</div><div style="font-size:10px; color:#7a9a6a;">老师手动填写</div></div></div>
+        <div class="mock-module"><div class="mock-checkbox unchecked">✓</div><div><div class="mock-module-name">个性化奖励</div><div style="font-size:10px; color:#7a9a6a;">自由添加奖励项</div></div></div>
+      </div>
+      <div style="margin-top:12px;"><div class="mock-btn" style="max-width:180px;">下一步 →　⬅ 点这里</div></div>
+    </div>
+  </div>
+
+  <div class="step-connector">↓</div>
+
+  <div class="step">
+    <div class="step-head"><div class="step-num">4</div><div class="step-title">上传数据文件</div></div>
+    <div class="step-desc">将从教务系统导出的 xlsx 文件拖入对应上传区，或点击选择文件。<br>・<strong>基础落实</strong>：文件名格式 <code style="background:#eef6e8; padding:1px 4px; border-radius:3px;">{班级号}_学生个人数据_....xlsx</code><br>・<strong>每日开口</strong>（若已勾选）：<code style="background:#eef6e8; padding:1px 4px; border-radius:3px;">打卡情况....xlsx</code></div>
+    <div class="mock">
+      <div class="mock-title">界面示意 · 文件上传</div>
+      <div class="mock-upload-zone"><div class="mock-upload-icon">📂</div><div>点击或拖拽上传 · 学生个人数据.xlsx</div><div style="font-size:10px; margin-top:3px; color:#9ab88a;">⬅ 点这里选择文件</div></div>
+      <div style="margin-top:10px;"><div class="mock-btn" style="max-width:180px;">解析文件 →　⬅ 上传后点这里</div></div>
+    </div>
+    <div class="callout"><span class="callout-icon">💡</span>文件上传后系统会自动从文件名提取班级号，并按学号匹配每日开口数据，无需手动对齐。</div>
+  </div>
+
+  <div class="step-connector">↓</div>
+
+  <div class="step">
+    <div class="step-head"><div class="step-num">5</div><div class="step-title">确认明细 / 微调数据</div></div>
+    <div class="step-desc">进入预览页面后，可以：<br>・选择发放方案（方案一：逐项计分 / 方案二：完成度计分）<br>・调整每日开口的每次打卡 MP 值<br>・修改每位同学的课堂参与分数<br>・新增个性化奖励项（指定同学、自定义金额）<br>确认无误后点击「生成结果」。</div>
+    <div class="mock">
+      <div class="mock-title">界面示意 · 预览 &amp; 微调</div>
+      <table class="mock-table">
+        <thead><tr><th>英文名</th><th>中文名</th><th>基础落实</th><th>每日开口</th><th>合计</th></tr></thead>
+        <tbody>
+          <tr><td>Amber</td><td>李晓彤</td><td>0.8</td><td>0.3</td><td><strong>1.3</strong></td></tr>
+          <tr><td>Brian</td><td>张明宇</td><td>0.5</td><td>0.3</td><td><strong>1.1</strong></td></tr>
+          <tr><td>Cindy</td><td>王雅琪</td><td>1.0</td><td>0.1</td><td><strong>1.3</strong></td></tr>
+        </tbody>
+      </table>
+      <div style="margin-top:12px;"><div class="mock-btn" style="max-width:180px;">生成结果 →　⬅ 点这里</div></div>
+    </div>
+  </div>
+
+  <div class="step-connector">↓</div>
+
+  <div class="step">
+    <div class="step-head"><div class="step-num">6</div><div class="step-title">导出结果</div></div>
+    <div class="step-desc">结果页面显示全班 MP 明细汇总表。<br>・<strong>导出图片</strong>：生成可直接发班级群的公示图片<br>・<strong>导出 Excel</strong>：生成符合教务系统上传格式的 xlsx 文件（英文名 / 中文名 / 学号 / 发放MP数量）</div>
+    <div class="mock">
+      <div class="mock-title">界面示意 · 导出结果</div>
+      <div class="mock-export-row">
+        <div class="mock-export-btn green">📷 导出图片　⬅ 发群</div>
+        <div class="mock-export-btn outline">📊 导出 Excel　⬅ 上传教务</div>
+      </div>
+    </div>
+    <div class="callout"><span class="callout-icon">💡</span>导出的 Excel 可直接上传到 cnfadmin.cnfschool.net 的「发放MP」功能，无需二次整理。</div>
+  </div>
+
+  <div class="tip-box">
+    <strong>常见问题</strong><br><br>
+    <strong>Q：上传文件后提示读取失败？</strong><br>
+    请确认上传的是从教务系统直接导出的原始 xlsx 文件，不要另存为其他格式，也不要修改文件内的 Sheet 名称。
+  </div>
+</div>
+</body>
+</html>

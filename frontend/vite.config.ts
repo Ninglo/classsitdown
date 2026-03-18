@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    allowedHosts: ['amber.jiujianian-dev-world.win'],
+    allowedHosts: true,
     proxy: {
       '/api': 'http://localhost:3001',
     },

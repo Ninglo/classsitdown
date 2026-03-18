@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const EducationSystemScraper = require('./scraper/scraper');
 
 const app = express();
@@ -8,7 +9,6 @@ const PORT = 3001;
 app.use(cors());
 app.use(express.json());
 
-// 防止未捕获的异常杀死进程
 process.on('unhandledRejection', (reason) => {
   console.error('❌ unhandledRejection:', reason);
 });
@@ -19,7 +19,6 @@ process.on('uncaughtException', (err) => {
 let scraperSession = null;
 let loginInProgress = false;
 
-// 登录 + 抓班级 合并为原子操作，避免浏览器被中途关闭
 app.post('/api/scraper/login', async (req, res) => {
   if (loginInProgress) {
     return res.status(429).json({ error: '正在登录中，请稍等...' });
@@ -33,7 +32,6 @@ app.post('/api/scraper/login', async (req, res) => {
 
     loginInProgress = true;
 
-    // 关闭旧会话
     if (scraperSession?.scraper) {
       try { await scraperSession.scraper.close(); } catch {}
       scraperSession = null;
@@ -49,8 +47,12 @@ app.post('/api/scraper/login', async (req, res) => {
     await scraper.login();
     console.log(`✅ 登录成功: ${username}`);
 
-    // 登录后立即抓班级，保持同一浏览器会话
-    const classes = await scraper.scrapeClassList();
+    const classMap = await scraper.getClassMap();
+    const classes = classMap.map((item) => ({
+      id: item.classCode,
+      name: item.classCode,
+      squadId: item.squadId,
+    }));
     console.log(`✅ 获取到 ${classes.length} 个班级: ${classes.map(c => c.name).join(', ')}`);
 
     scraperSession = { username, password, scraper };
@@ -69,13 +71,17 @@ app.post('/api/scraper/login', async (req, res) => {
   }
 });
 
-// 保留此接口用于兼容，但登录时已经抓取了
 app.post('/api/scraper/get-classes', async (req, res) => {
   try {
     if (!scraperSession) {
       return res.status(401).json({ error: '未登录，请先登录' });
     }
-    const classes = await scraperSession.scraper.scrapeClassList();
+    const classMap = await scraperSession.scraper.getClassMap(true);
+    const classes = classMap.map((item) => ({
+      id: item.classCode,
+      name: item.classCode,
+      squadId: item.squadId,
+    }));
     console.log(`✅ 刷新班级: ${classes.length} 个`);
     res.json({ status: 'success', data: classes, count: classes.length });
   } catch (error) {
@@ -88,6 +94,14 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', loggedIn: !!scraperSession, loginInProgress });
 });
 
-app.listen(PORT, () => {
+// 托管前端静态文件
+const distDir = path.join(__dirname, '../frontend/dist');
+app.use(express.static(distDir, { index: 'index.html' }));
+// SPA fallback — 兼容 Express 5
+app.use((_req, res) => {
+  res.sendFile(path.join(distDir, 'index.html'));
+});
+
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Amber server running at http://localhost:${PORT}`);
 });

@@ -20,6 +20,12 @@ function fmt(mp: number): string {
   return `${Math.round(mp * 10)} CP`;
 }
 
+function fmtStar(mp: number, isMax: boolean): string {
+  const text = fmt(mp);
+  if (!isMax || mp <= 0) return text;
+  return `✨ ${text} ✨`;
+}
+
 function sortResults(list: MPBreakdown[], key: SortKey): MPBreakdown[] {
   const r = [...list];
   switch (key) {
@@ -32,10 +38,39 @@ function sortResults(list: MPBreakdown[], key: SortKey): MPBreakdown[] {
   }
 }
 
+const RULES_TEXT = `MP 发放原则
+
+本次 MP 由以下几个部分构成：
+
+【基础落实】（必选）
+· 方案一（逐项累计）：每完成一个任务 +0.1 MP；成为词王 +0.2 MP；词王准确率 ≥75% 再 +0.2 MP；AI语音平均分 ≥75% +0.2 MP；测试得分率 ≥75% +0.2 MP
+· 方案二（全勤奖励）：所有任务全部完成方可获得 0.5 MP 基础分，词王 / AI语音 / 测试得分率奖励在基础分之上叠加
+本次基础落实数据包含：音频、视频、互动视频、主题表达积累（含词王）、小挑战、AI语音、测试、高阶阅读、复合资源
+
+【每日开口】（可选）
+打卡天数 × 每次打卡 MP 值，按实际打卡情况发放
+
+【课堂参与】（可选）
+全班默认值 + PK 获胜者额外奖励，由老师手动调整
+
+【个性化奖励】（可选）
+老师自定义奖励任务，指定学生与金额，灵活叠加`;
+
+type Theme = 'forest' | 'ocean' | 'sakura' | 'sunshine';
+
+const THEMES: { id: Theme; label: string }[] = [
+  { id: 'forest',   label: '绿意' },
+  { id: 'ocean',    label: '海蓝' },
+  { id: 'sakura',   label: '樱粉' },
+  { id: 'sunshine', label: '暖阳' },
+];
+
 export default function ResultView({ results, students, bonusItems, classCode, week, onBack }: Props) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('total_desc');
+  const [showRules, setShowRules] = useState(false);
+  const [theme, setTheme] = useState<Theme>('forest');
 
   const mpMap = new Map(results.map((r) => [r.studentId, r.total]));
 
@@ -43,18 +78,31 @@ export default function ResultView({ results, students, bonusItems, classCode, w
   const showDaily = results.some((r) => r.每日开口 > 0);
   const showClass = results.some((r) => r.课堂参与 > 0);
 
-  // 每个独立奖励项目作为单独一列，只要有学生的这一项>0才显示
   const bonusCols = bonusItems.filter((b) =>
     results.some((r) => b.studentIds.includes(r.studentId) && b.amount > 0)
   );
 
-  // 获取某学生在某个奖励项的金额
   function getBonusAmount(studentId: string, bonus: BonusItem): number {
     return bonus.studentIds.includes(studentId) ? bonus.amount : 0;
   }
 
   const sorted = sortResults(results, sortKey);
   const totalMP = results.reduce((s, r) => s + r.total, 0);
+
+  const medalMap = new Map<string, string>(
+    [...results]
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 3)
+      .map((r, i) => [r.studentId, i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'])
+  );
+
+  const maxBasic = showBasic ? Math.max(...results.map(r => r.基础落实)) : 0;
+  const maxDaily = showDaily ? Math.max(...results.map(r => r.每日开口)) : 0;
+  const maxClass = showClass ? Math.max(...results.map(r => r.课堂参与)) : 0;
+  const maxBonusAmounts = bonusCols.map(b =>
+    Math.max(...results.map(r => getBonusAmount(r.studentId, b)))
+  );
+  const maxTotal = Math.max(...results.map(r => r.total));
 
   async function handleDownloadImage() {
     if (!cardRef.current) return;
@@ -101,6 +149,16 @@ export default function ResultView({ results, students, bonusItems, classCode, w
       <div className="result-topbar">
         <button className="back-btn" onClick={onBack}>← 返回</button>
         <div className="result-controls">
+          <div className="theme-selector">
+            {THEMES.map((t) => (
+              <button
+                key={t.id}
+                className={`theme-dot theme-dot-${t.id}${theme === t.id ? ' active' : ''}`}
+                title={t.label}
+                onClick={() => setTheme(t.id)}
+              />
+            ))}
+          </div>
           <select className="sort-select" value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)}>
             {SORT_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
           </select>
@@ -111,7 +169,7 @@ export default function ResultView({ results, students, bonusItems, classCode, w
         </div>
       </div>
 
-      <div className="result-card card" ref={cardRef}>
+      <div className="result-card card" ref={cardRef} data-theme={theme}>
         <div className="result-header">
           <div className="result-class-info">
             <span className="result-class-code">{classCode}</span>
@@ -124,38 +182,52 @@ export default function ResultView({ results, students, bonusItems, classCode, w
           <table className="result-table">
             <thead>
               <tr>
-                <th>#</th>
+                <th className="col-rank-h">#</th>
                 <th>英文名</th>
                 <th>中文名</th>
                 {showBasic && <th>基础落实</th>}
                 {showDaily && <th>每日开口</th>}
                 {showClass && <th>课堂参与</th>}
                 {bonusCols.map((b) => <th key={b.name}>{b.name}</th>)}
-                <th className="col-total-h">合计</th>
+                <th>合计</th>
               </tr>
             </thead>
             <tbody>
               {sorted.map((r, i) => (
                 <tr key={r.studentId} className={i % 2 === 0 ? 'row-even' : 'row-odd'}>
                   <td className="col-rank">
-                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                    {medalMap.get(r.studentId) ?? ''}
                   </td>
                   <td className="col-name-en">{r.englishName}</td>
                   <td className="col-name-zh">{r.chineseName}</td>
-                  {showBasic && <td>{fmt(r.基础落实)}</td>}
-                  {showDaily && <td>{fmt(r.每日开口)}</td>}
-                  {showClass && <td>{fmt(r.课堂参与)}</td>}
-                  {bonusCols.map((b) => (
-                    <td key={b.name}>{fmt(getBonusAmount(r.studentId, b))}</td>
-                  ))}
-                  <td className="col-total-val">{fmt(r.total)}</td>
+                  {showBasic && <td className={r.基础落实 > 0 && r.基础落实 === maxBasic ? 'col-star' : ''}>{fmtStar(r.基础落实, r.基础落实 === maxBasic)}</td>}
+                  {showDaily && <td className={r.每日开口 > 0 && r.每日开口 === maxDaily ? 'col-star' : ''}>{fmtStar(r.每日开口, r.每日开口 === maxDaily)}</td>}
+                  {showClass && <td className={r.课堂参与 > 0 && r.课堂参与 === maxClass ? 'col-star' : ''}>{fmtStar(r.课堂参与, r.课堂参与 === maxClass)}</td>}
+                  {bonusCols.map((b, bi) => {
+                    const amt = getBonusAmount(r.studentId, b);
+                    return <td key={b.name} className={amt > 0 && amt === maxBonusAmounts[bi] ? 'col-star' : ''}>{fmtStar(amt, amt === maxBonusAmounts[bi])}</td>;
+                  })}
+                  <td className={`col-total-val${r.total === maxTotal && r.total > 0 ? ' col-star' : ''}`}>{fmtStar(r.total, r.total === maxTotal)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        <div className="result-footer">ClassSitDown · I will help you</div>
+        <div className="result-rules-toggle-row">
+          <button
+            className={`btn btn-ghost btn-sm${showRules ? ' btn-rules-active' : ''}`}
+            onClick={() => setShowRules((v) => !v)}
+          >
+            {showRules ? '隐藏发放规则' : '显示发放规则'}
+          </button>
+        </div>
+
+        {showRules && (
+          <div className="result-rules">
+            <pre>{RULES_TEXT}</pre>
+          </div>
+        )}
       </div>
     </div>
   );

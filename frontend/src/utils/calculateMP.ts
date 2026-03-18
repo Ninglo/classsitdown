@@ -1,5 +1,6 @@
-import type { StudentData, MPBreakdown, SchemeId, Module } from '../types';
+import type { StudentData, MPBreakdown, SchemeId, Module, SavedCustomScheme } from '../types';
 import { parsePercent } from './parseExcel';
+import { calcCustomScheme } from './customScheme';
 
 function isCompleted(val: unknown): boolean {
   return String(val ?? '').trim() === '已完成';
@@ -34,6 +35,12 @@ function calcScheme1(student: StudentData): number {
       const score = c['分数(15)'];
       if (score !== null && Number(score) / 15 >= 0.75) mp += 0.2;
     } else if (type === '复合资源') {
+      if (isCompleted(c['是否完成'])) mp += 0.1;
+    } else if (type === '视频') {
+      if (isCompleted(c['是否完成'])) mp += 0.1;
+    } else if (type === '互动视频') {
+      if (isCompleted(c['是否完成'])) mp += 0.1;
+    } else if (type === '高阶阅读') {
       if (isCompleted(c['是否完成'])) mp += 0.1;
     }
   }
@@ -71,10 +78,21 @@ export function calculateMP(
   students: StudentData[],
   scheme: SchemeId,
   dailyCheckInRate: number,
-  modules: Set<Module>
+  modules: Set<Module>,
+  customSchemeData?: SavedCustomScheme
 ): MPBreakdown[] {
   return students.map((s) => {
-    const 基础落实 = scheme === 'scheme1' ? calcScheme1(s) : calcScheme2(s);
+    let 基础落实: number;
+    if (scheme === 'scheme1') {
+      基础落实 = calcScheme1(s);
+    } else if (scheme === 'scheme2') {
+      基础落实 = calcScheme2(s);
+    } else if (scheme.startsWith('custom_') && customSchemeData) {
+      基础落实 = calcCustomScheme(s, customSchemeData);
+    } else {
+      基础落实 = 0;
+    }
+
     const 每日开口 = modules.has('每日开口') ? round2(s.dailyCheckIns * dailyCheckInRate) : 0;
     const 课堂参与 = modules.has('课堂参与') ? round2(s.classParticipation) : 0;
     const 个性化奖励 = modules.has('个性化奖励')
