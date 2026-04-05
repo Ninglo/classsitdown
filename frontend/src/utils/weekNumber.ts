@@ -1,4 +1,12 @@
-const WEEK1_START = new Date(2026, 2, 2); // March 2, 2026
+const DEFAULT_WEEK1_START = '2026-03-02';
+
+function resolveWeek1Start(): Date {
+  const raw = import.meta.env.VITE_WEEK1_START || DEFAULT_WEEK1_START;
+  const date = new Date(`${raw}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? new Date(`${DEFAULT_WEEK1_START}T00:00:00`) : date;
+}
+
+const WEEK1_START = resolveWeek1Start();
 
 export function getCurrentWeek(): number {
   const now = new Date();

@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import type { MPBreakdown, StudentData, BonusItem } from '../types';
+import { useMemo, useRef, useState } from 'react';
+import type { BonusItem, ClassInfo, MPBreakdown, StudentData, SchemeSettings } from '../types';
 import { generateOutputExcel } from '../utils/parseExcel';
 import './ResultView.css';
 
@@ -8,7 +8,9 @@ interface Props {
   students: StudentData[];
   bonusItems: BonusItem[];
   classCode: string;
+  classInfo: ClassInfo;
   week: number;
+  schemeSettings: SchemeSettings;
   onBack: () => void;
 }
 
@@ -38,13 +40,42 @@ function sortResults(list: MPBreakdown[], key: SortKey): MPBreakdown[] {
   }
 }
 
-const RULES_TEXT = `MP 发放原则
+type Theme = 'forest' | 'ocean' | 'sakura' | 'sunshine';
+
+const THEMES: { id: Theme; label: string }[] = [
+  { id: 'forest',   label: '绿意' },
+  { id: 'ocean',    label: '海蓝' },
+  { id: 'sakura',   label: '樱粉' },
+  { id: 'sunshine', label: '暖阳' },
+];
+
+export default function ResultView({
+  results,
+  students,
+  bonusItems,
+  classCode,
+  classInfo,
+  week,
+  schemeSettings,
+  onBack,
+}: Props) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>('total_desc');
+  const [showRules, setShowRules] = useState(false);
+  const [theme, setTheme] = useState<Theme>('forest');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState('');
+
+  const rulesText = useMemo(() => {
+    const scheme2Text = `· 方案二（全勤奖励）：所有任务全部完成方可获得 ${schemeSettings.scheme2AllDoneAmount} MP 基础分，词王 / AI语音 / 测试得分率奖励在基础分之上叠加`;
+    return `MP 发放原则
 
 本次 MP 由以下几个部分构成：
 
 【基础落实】（必选）
 · 方案一（逐项累计）：每完成一个任务 +0.1 MP；成为词王 +0.2 MP；词王准确率 ≥75% 再 +0.2 MP；AI语音平均分 ≥75% +0.2 MP；测试得分率 ≥75% +0.2 MP
-· 方案二（全勤奖励）：所有任务全部完成方可获得 0.5 MP 基础分，词王 / AI语音 / 测试得分率奖励在基础分之上叠加
+${scheme2Text}
 本次基础落实数据包含：音频、视频、互动视频、主题表达积累（含词王）、小挑战、AI语音、测试、高阶阅读、复合资源
 
 【每日开口】（可选）
@@ -55,22 +86,7 @@ const RULES_TEXT = `MP 发放原则
 
 【个性化奖励】（可选）
 老师自定义奖励任务，指定学生与金额，灵活叠加`;
-
-type Theme = 'forest' | 'ocean' | 'sakura' | 'sunshine';
-
-const THEMES: { id: Theme; label: string }[] = [
-  { id: 'forest',   label: '绿意' },
-  { id: 'ocean',    label: '海蓝' },
-  { id: 'sakura',   label: '樱粉' },
-  { id: 'sunshine', label: '暖阳' },
-];
-
-export default function ResultView({ results, students, bonusItems, classCode, week, onBack }: Props) {
-  const cardRef = useRef<HTMLDivElement>(null);
-  const [exporting, setExporting] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>('total_desc');
-  const [showRules, setShowRules] = useState(false);
-  const [theme, setTheme] = useState<Theme>('forest');
+  }, [schemeSettings.scheme2AllDoneAmount]);
 
   const mpMap = new Map(results.map((r) => [r.studentId, r.total]));
 
@@ -135,6 +151,55 @@ export default function ResultView({ results, students, bonusItems, classCode, w
     setTimeout(() => URL.revokeObjectURL(link.href), 5000);
   }
 
+  async function handleSubmitToSystem() {
+    if (!classInfo.squadId) {
+      setSubmitMessage('当前班级没有官网班级ID，暂时不能直接发放。');
+      return;
+    }
+
+    const rewards = results
+      .filter((r) => r.total > 0)
+      .map((r) => ({
+        studentId: r.studentId,
+        studentName: r.englishName,
+        aliases: [r.englishName, r.chineseName].filter(Boolean),
+        amount: r.total,
+      }));
+
+    if (rewards.length === 0) {
+      setSubmitMessage('当前没有可发放的奖励。');
+      return;
+    }
+
+    const ok = window.confirm(`将为 ${rewards.length} 名学生直接发放奖励，是否继续？`);
+    if (!ok) {
+      return;
+    }
+
+    setSubmitting(true);
+    setSubmitMessage('');
+    try {
+      const resp = await fetch('/api/scraper/submit-minipin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          classId: classInfo.squadId,
+          rewards,
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(data.error || '发放失败');
+      }
+      setSubmitMessage(`已发放 ${data.success ?? 0} 人，失败 ${data.failed ?? 0} 人。`);
+    } catch (error) {
+      setSubmitMessage(error instanceof Error ? error.message : '发放失败');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   const SORT_OPTIONS: { key: SortKey; label: string }[] = [
     { key: 'total_desc', label: '总量 ↓' },
     { key: 'total_asc',  label: '总量 ↑' },
@@ -162,6 +227,14 @@ export default function ResultView({ results, students, bonusItems, classCode, w
           <select className="sort-select" value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)}>
             {SORT_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
           </select>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={handleSubmitToSystem}
+            disabled={submitting || !classInfo.squadId}
+            title={classInfo.squadId ? '把当前结果直接发到官网' : '手动模式暂不支持直接发放'}
+          >
+            {submitting ? '发放中...' : '发到官网'}
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={handleDownloadExcel}>↓ Excel</button>
           <button className="btn btn-primary btn-sm" onClick={handleDownloadImage} disabled={exporting}>
             {exporting ? '生成中...' : '↓ 图片'}
@@ -225,9 +298,10 @@ export default function ResultView({ results, students, bonusItems, classCode, w
 
         {showRules && (
           <div className="result-rules">
-            <pre>{RULES_TEXT}</pre>
+            <pre>{rulesText}</pre>
           </div>
         )}
+        {submitMessage && <div className="result-submit-message">{submitMessage}</div>}
       </div>
     </div>
   );

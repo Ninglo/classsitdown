@@ -310,3 +310,13 @@
   border-top: 1px solid var(--t-light);
   margin-top: 4px;
 }
+
+.result-submit-message {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--t-light);
+  border: 1px solid var(--t-border);
+  color: var(--t-dark);
+  font-size: 12px;
+}

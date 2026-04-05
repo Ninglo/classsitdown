@@ -1,4 +1,4 @@
-import type { StudentData, MPBreakdown, SchemeId, Module, SavedCustomScheme } from '../types';
+import type { StudentData, MPBreakdown, SchemeId, Module, SavedCustomScheme, SchemeSettings } from '../types';
 import { parsePercent } from './parseExcel';
 import { calcCustomScheme } from './customScheme';
 
@@ -47,9 +47,9 @@ function calcScheme1(student: StudentData): number {
   return round2(mp);
 }
 
-function calcScheme2(student: StudentData): number {
+function calcScheme2(student: StudentData, allDoneAmount: number): number {
   const allDone = student.resources.every((res) => isCompleted(res.columns['是否完成']));
-  let mp = allDone ? 0.5 : 0;
+  let mp = allDone ? allDoneAmount : 0;
   for (const res of student.resources) {
     const c = res.columns;
     const type = res.resourceType;
@@ -79,14 +79,15 @@ export function calculateMP(
   scheme: SchemeId,
   dailyCheckInRate: number,
   modules: Set<Module>,
-  customSchemeData?: SavedCustomScheme
+  customSchemeData?: SavedCustomScheme,
+  schemeSettings: SchemeSettings = { scheme2AllDoneAmount: 0.5 }
 ): MPBreakdown[] {
   return students.map((s) => {
     let 基础落实: number;
     if (scheme === 'scheme1') {
       基础落实 = calcScheme1(s);
     } else if (scheme === 'scheme2') {
-      基础落实 = calcScheme2(s);
+      基础落实 = calcScheme2(s, schemeSettings.scheme2AllDoneAmount);
     } else if (scheme.startsWith('custom_') && customSchemeData) {
       基础落实 = calcCustomScheme(s, customSchemeData);
     } else {
@@ -121,6 +122,6 @@ export const SCHEMES = [
   {
     id: 'scheme2' as SchemeId,
     name: '方案二',
-    description: '全勤奖励：所有任务全部完成才拿 0.5 MP 基础分；词王、准确率奖励照样叠加在基础分上',
+    description: '全勤奖励：所有任务全部完成才拿基础分；词王、准确率奖励照样叠加在基础分上',
   },
 ];

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import type { ClassInfo, Module, StudentData, MPBreakdown, SchemeId, BonusItem, SavedCustomScheme } from '../types';
+import type { ClassInfo, Module, StudentData, MPBreakdown, SchemeId, BonusItem, SavedCustomScheme, SchemeSettings } from '../types';
 import { parseBasicFile, parseDailyCheckFile } from '../utils/parseExcel';
 import { calculateMP, SCHEMES } from '../utils/calculateMP';
 import { getCurrentWeek } from '../utils/weekNumber';
@@ -41,6 +41,7 @@ export default function DistributionFlow({ classInfo, onBack }: Props) {
   const [scheme, setScheme] = useState<SchemeId>('scheme1');
   const [customSchemeData, setCustomSchemeData] = useState<SavedCustomScheme | undefined>();
   const [dailyRate, setDailyRate] = useState(0.1);
+  const [schemeSettings, setSchemeSettings] = useState<SchemeSettings>({ scheme2AllDoneAmount: 0.5 });
   const [defaultParticipation, setDefaultParticipation] = useState(0.2);
   const [bonusItems, setBonusItems] = useState<BonusItem[]>([]);
   const [mpResults, setMpResults] = useState<MPBreakdown[]>([]);
@@ -90,7 +91,14 @@ export default function DistributionFlow({ classInfo, onBack }: Props) {
       ...s,
       bonusItems: bonusItems.filter((b) => b.studentIds.includes(s.studentId)),
     }));
-    const results = calculateMP(studWithBonus, scheme, dailyRate, selectedModules, customSchemeData);
+    const results = calculateMP(
+      studWithBonus,
+      scheme,
+      dailyRate,
+      selectedModules,
+      customSchemeData,
+      schemeSettings
+    );
     bonusItems.forEach((b) => {
       const names = students
         .filter((s) => b.studentIds.includes(s.studentId))
@@ -166,12 +174,16 @@ export default function DistributionFlow({ classInfo, onBack }: Props) {
           students={students}
           scheme={scheme}
           customSchemeData={customSchemeData}
+          schemeSettings={schemeSettings}
           dailyRate={dailyRate}
           defaultParticipation={defaultParticipation}
           bonusItems={bonusItems}
           modules={selectedModules}
           onSchemeChange={(id, data) => { setScheme(id); setCustomSchemeData(data); }}
           onDailyRateChange={setDailyRate}
+          onSchemeSettingsChange={(patch) =>
+            setSchemeSettings((prev) => ({ ...prev, ...patch }))
+          }
           onParticipationChange={(sid, val) => {
             setStudents((prev) =>
               prev.map((s) => s.studentId === sid ? { ...s, classParticipation: val } : s)
@@ -189,6 +201,7 @@ export default function DistributionFlow({ classInfo, onBack }: Props) {
           onAddBonus={(b) => setBonusItems((prev) => [...prev, b])}
           onRemoveBonus={(i) => setBonusItems((prev) => prev.filter((_, idx) => idx !== i))}
           classCode={displayCode}
+          classInfo={classInfo}
           week={week}
           onBack={() => setStep(2)}
           onGenerate={applyResults}
@@ -200,7 +213,9 @@ export default function DistributionFlow({ classInfo, onBack }: Props) {
           students={students}
           bonusItems={bonusItems}
           classCode={displayCode}
+          classInfo={classInfo}
           week={week}
+          schemeSettings={schemeSettings}
           onBack={() => setStep(3)}
         />
       )}
@@ -337,18 +352,21 @@ function StepPreview({
   students,
   scheme,
   customSchemeData,
+  schemeSettings,
   dailyRate,
   defaultParticipation,
   bonusItems,
   modules,
   onSchemeChange,
   onDailyRateChange,
+  onSchemeSettingsChange,
   onParticipationChange,
   onBulkParticipation,
   onDefaultParticipationChange,
   onAddBonus,
   onRemoveBonus,
   classCode,
+  classInfo,
   week,
   onBack,
   onGenerate,
@@ -356,18 +374,21 @@ function StepPreview({
   students: StudentData[];
   scheme: SchemeId;
   customSchemeData: SavedCustomScheme | undefined;
+  schemeSettings: SchemeSettings;
   dailyRate: number;
   defaultParticipation: number;
   bonusItems: BonusItem[];
   modules: Set<Module>;
   onSchemeChange: (id: SchemeId, data?: SavedCustomScheme) => void;
   onDailyRateChange: (v: number) => void;
+  onSchemeSettingsChange: (patch: Partial<SchemeSettings>) => void;
   onParticipationChange: (sid: string, val: number) => void;
   onBulkParticipation: (sids: string[], val: number) => void;
   onDefaultParticipationChange: (val: number) => void;
   onAddBonus: (b: BonusItem) => void;
   onRemoveBonus: (i: number) => void;
   classCode: string;
+  classInfo: ClassInfo;
   week: number;
   onBack: () => void;
   onGenerate: () => void;
@@ -436,7 +457,12 @@ function StepPreview({
 
   function getSchemeDescription(): string {
     const builtin = SCHEMES.find((s) => s.id === scheme);
-    if (builtin) return builtin.description;
+    if (builtin) {
+      if (builtin.id === 'scheme2') {
+        return `全勤奖励：所有任务全部完成才拿 ${schemeSettings.scheme2AllDoneAmount} MP 基础分；词王、准确率奖励照样叠加在基础分上`;
+      }
+      return builtin.description;
+    }
     if (customSchemeData) {
       const enabled = customSchemeData.rules.filter((r) => r.enabled);
       return `自定义方案 · ${enabled.length} 条规则已启用`;
@@ -500,6 +526,22 @@ function StepPreview({
             )}
           </div>
         </div>
+        {scheme === 'scheme2' && (
+          <div className="config-row">
+            <span className="config-label">全部完成奖励 =</span>
+            <input
+              className="input-field config-input"
+              type="number"
+              step="0.1"
+              min="0"
+              value={schemeSettings.scheme2AllDoneAmount}
+              onChange={(e) =>
+                onSchemeSettingsChange({ scheme2AllDoneAmount: parseFloat(e.target.value) || 0 })
+              }
+            />
+            <span className="config-unit">MP</span>
+          </div>
+        )}
         {modules.has('每日开口') && (
           <div className="config-row">
             <span className="config-label">每次打卡 =</span>

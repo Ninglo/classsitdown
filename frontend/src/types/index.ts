@@ -30,6 +30,10 @@ export interface BonusItem {
   studentIds: string[];
 }
 
+export interface SchemeSettings {
+  scheme2AllDoneAmount: number;
+}
+
 export interface MPBreakdown {
   studentId: string;
   chineseName: string;

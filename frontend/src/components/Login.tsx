@@ -36,6 +36,7 @@ export default function Login({ onLogin }: Props) {
       const loginRes = await fetch('/api/scraper/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ username: username.trim(), password: password.trim() }),
         signal: ctrl.signal,
       });

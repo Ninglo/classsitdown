@@ -4,6 +4,7 @@
  */
 
 const puppeteer = require('puppeteer');
+const fs = require('fs');
 
 class EducationSystemScraper {
   constructor(options = {}) {
@@ -22,9 +23,12 @@ class EducationSystemScraper {
    */
   async initBrowser() {
     try {
+      const macChromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+      const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH
+        || (fs.existsSync(macChromePath) ? macChromePath : undefined);
       this.browser = await puppeteer.launch({
         headless: 'new',
-        executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        executablePath,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
       });
       console.log('✅ Puppeteer浏览器已启动');
@@ -1369,9 +1373,10 @@ class EducationSystemScraper {
         // 在页面中查找学生行
         const rows = await this.page.$$('tr, .student-row, .list-item');
         let targetRow = null;
+        const aliases = [reward.studentName, ...(reward.aliases || [])].filter(Boolean);
         for (const row of rows) {
           const text = await row.evaluate(el => el.textContent);
-          if (text && text.includes(reward.studentName)) {
+          if (text && aliases.some((name) => text.includes(name))) {
             targetRow = row;
             break;
           }
