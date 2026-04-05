@@ -22,7 +22,7 @@ const FEATURES: FeatureCard[] = [
   { icon: '📅', title: '请假管理',      desc: '敬请期待…',               action: 'coming' },
 ];
 
-const SEATING_APP_URL = 'https://amber2.cnfschool.net/';
+const SEATING_APP_PATH = '/seating/';
 
 export default function ClassHub({ classInfo, onSelectFlow, onBack }: Props) {
   const week = getCurrentWeek();
@@ -33,7 +33,7 @@ export default function ClassHub({ classInfo, onSelectFlow, onBack }: Props) {
   function handleCard(action: FeatureCard['action']) {
     if (action === 'flow') onSelectFlow();
     else if (action === 'seating') {
-      const url = new URL(SEATING_APP_URL);
+      const url = new URL(SEATING_APP_PATH, window.location.origin);
       if (classInfo.id !== 'manual' && displayName) {
         url.searchParams.set('class', displayName);
       }
