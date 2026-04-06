@@ -12,6 +12,7 @@ interface Props {
   week: number;
   schemeSettings: SchemeSettings;
   onBack: () => void;
+  onSessionExpired?: () => void;
 }
 
 type SortKey = 'total_desc' | 'total_asc' | 'en_asc' | 'en_desc' | 'zh_asc' | 'zh_desc';
@@ -58,6 +59,7 @@ export default function ResultView({
   week,
   schemeSettings,
   onBack,
+  onSessionExpired,
 }: Props) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
@@ -189,6 +191,11 @@ ${scheme2Text}
         }),
       });
       const data = await resp.json().catch(() => ({}));
+      if (resp.status === 401) {
+        onSessionExpired?.();
+        setSubmitMessage('会话已过期，请重新登录后再试');
+        return;
+      }
       if (!resp.ok) {
         throw new Error(data.error || '发放失败');
       }

@@ -12,6 +12,7 @@ import './DistributionFlow.css';
 interface Props {
   classInfo: ClassInfo;
   onBack: () => void;
+  onSessionExpired?: () => void;
 }
 
 const ALL_MODULES: Module[] = ['基础落实', '每日开口', '课堂参与', '个性化奖励'];
@@ -30,7 +31,7 @@ const MODULE_REQUIRED: Record<Module, boolean> = {
   个性化奖励: false,
 };
 
-export default function DistributionFlow({ classInfo, onBack }: Props) {
+export default function DistributionFlow({ classInfo, onBack, onSessionExpired }: Props) {
   const isManual = classInfo.id === 'manual';
   const [manualCode, setManualCode] = useState('');
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
@@ -217,6 +218,7 @@ export default function DistributionFlow({ classInfo, onBack }: Props) {
           week={week}
           schemeSettings={schemeSettings}
           onBack={() => setStep(3)}
+          onSessionExpired={onSessionExpired}
         />
       )}
     </div>
