@@ -39,6 +39,21 @@
   margin-bottom: 20px;
 }
 
+.hub-class-meta {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.hub-meta-item {
+  font-size: 13px;
+  color: var(--gray-600);
+  background: var(--gray-100);
+  padding: 4px 12px;
+  border-radius: 20px;
+}
+
 .hub-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

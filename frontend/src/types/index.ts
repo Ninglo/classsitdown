@@ -86,7 +86,7 @@ export interface BonusHistoryEntry {
   records: BonusHistoryRecord[];
 }
 
-export type AppScreen = 'login' | 'welcome' | 'hub' | 'flow';
+export type AppScreen = 'login' | 'welcome' | 'hub' | 'flow' | 'seating' | 'overview';
 
 export type DayOfWeek = '周一' | '周二' | '周三' | '周四' | '周五' | '周六' | '周日';
 
@@ -94,6 +94,26 @@ export interface ClassSchedule {
   classCode: string;
   days: DayOfWeek[];
 }
+
+export interface ScheduleSlot {
+  day: DayOfWeek;
+  time: string;
+}
+
+export interface StudentInfo {
+  id: string;
+  chineseName: string;
+  englishName?: string;
+}
+
+export interface ClassProfile {
+  classCode: string;
+  schedule: ScheduleSlot[];
+  students: StudentInfo[];
+  updatedAt: number;
+}
+
+export type WelcomeView = 'byClass' | 'byDate';
 
 export interface AppState {
   screen: AppScreen;

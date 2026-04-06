@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import type { ClassInfo } from '../types';
+import type { ClassInfo, WelcomeView, DayOfWeek } from '../types';
 import { getCurrentWeek, getWeekRange, formatDateShort } from '../utils/weekNumber';
-import { getClassDays, sortClassesBySchedule } from '../utils/classSchedule';
+import { ALL_DAYS, getClassDays, sortClassesBySchedule, loadWeeklySchedule } from '../utils/classSchedule';
+import { getStudentCount } from '../utils/classProfiles';
 import ScheduleEditor from './ScheduleEditor';
 import './Welcome.css';
 
@@ -9,14 +10,16 @@ interface Props {
   teacherName: string;
   classes: ClassInfo[];
   onSelectClass: (cls: ClassInfo) => void;
+  onLogout: () => void;
 }
 
-export default function Welcome({ teacherName, classes, onSelectClass }: Props) {
+export default function Welcome({ teacherName, classes, onSelectClass, onLogout }: Props) {
   const week = getCurrentWeek();
   const { start, end } = getWeekRange(week);
   const [showGuide, setShowGuide] = useState(false);
   const [showScheduleEditor, setShowScheduleEditor] = useState(false);
   const [scheduleVersion, setScheduleVersion] = useState(0);
+  const [view, setView] = useState<WelcomeView>('byClass');
 
   const firstName = teacherName.replace(/^(ms\.?|mr\.?|mrs\.?)/i, '').trim().split(/[\s_]/)[0];
   const displayName = firstName.charAt(0).toUpperCase() + firstName.slice(1);
@@ -27,6 +30,25 @@ export default function Welcome({ teacherName, classes, onSelectClass }: Props) 
 
   const sortedClasses = sortClassesBySchedule(classes);
 
+  // Build day-grouped schedule for "by date" view
+  function buildDayView(): { day: DayOfWeek; classes: ClassInfo[] }[] {
+    const sched = loadWeeklySchedule();
+    const result: { day: DayOfWeek; classes: ClassInfo[] }[] = [];
+    for (const day of ALL_DAYS) {
+      const codes = sched[day] ?? [];
+      if (codes.length === 0) continue;
+      const matched = codes
+        .map((code) => classes.find((c) => c.name === code))
+        .filter((c): c is ClassInfo => !!c);
+      if (matched.length > 0) {
+        result.push({ day, classes: matched });
+      }
+    }
+    return result;
+  }
+
+  const daySchedule = view === 'byDate' ? buildDayView() : [];
+
   return (
     <div className="welcome-wrap fade-in">
       <header className="welcome-header">
@@ -36,9 +58,14 @@ export default function Welcome({ teacherName, classes, onSelectClass }: Props) 
             <p className="slogan">Super Amber is here! · I will help you</p>
           </div>
         </div>
-        <div className="week-badge">
-          <span className="week-num">Week {week}</span>
-          <span className="week-range">{formatDateShort(start)} – {formatDateShort(end)}</span>
+        <div className="welcome-header-right">
+          <div className="week-badge">
+            <span className="week-num">Week {week}</span>
+            <span className="week-range">{formatDateShort(start)} – {formatDateShort(end)}</span>
+          </div>
+          <button className="btn btn-ghost btn-sm logout-btn" onClick={onLogout}>
+            退出登录
+          </button>
         </div>
       </header>
 
@@ -46,7 +73,20 @@ export default function Welcome({ teacherName, classes, onSelectClass }: Props) 
         {classes.length > 0 ? (
           <>
             <div className="section-title">
-              <span>你的班级</span>
+              <div className="view-toggle">
+                <button
+                  className={`view-toggle-btn${view === 'byClass' ? ' active' : ''}`}
+                  onClick={() => setView('byClass')}
+                >
+                  按班级
+                </button>
+                <button
+                  className={`view-toggle-btn${view === 'byDate' ? ' active' : ''}`}
+                  onClick={() => setView('byDate')}
+                >
+                  按日期
+                </button>
+              </div>
               <div className="section-title-right">
                 <span className="section-count">{classes.length} 个班级</span>
                 <button
@@ -67,24 +107,64 @@ export default function Welcome({ teacherName, classes, onSelectClass }: Props) 
               />
             )}
 
-            <div className="class-grid">
-              {sortedClasses.map((cls) => {
-                const days = getClassDays(cls.name);
-                return (
-                  <button
-                    key={cls.id}
-                    className="class-card"
-                    onClick={() => onSelectClass(cls)}
-                  >
-                    <div className="class-code">{cls.name}</div>
-                    {days.length > 0 && (
-                      <div className="class-days">{days.join(' · ')}</div>
-                    )}
-                    <div className="class-action">进入 →</div>
-                  </button>
-                );
-              })}
-            </div>
+            {view === 'byClass' ? (
+              <div className="class-grid">
+                {sortedClasses.map((cls) => {
+                  const days = getClassDays(cls.name);
+                  const count = getStudentCount(cls.name);
+                  return (
+                    <button
+                      key={cls.id}
+                      className="class-card"
+                      onClick={() => onSelectClass(cls)}
+                    >
+                      <div className="class-code">{cls.name}</div>
+                      {days.length > 0 && (
+                        <div className="class-days">{days.join(' · ')}</div>
+                      )}
+                      {count > 0 && (
+                        <div className="class-student-count">{count}人</div>
+                      )}
+                      <div className="class-action">进入 →</div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="day-view">
+                {daySchedule.length > 0 ? (
+                  daySchedule.map(({ day, classes: dayClasses }) => (
+                    <div key={day} className="day-group">
+                      <div className="day-group-label">{day}</div>
+                      <div className="day-group-classes">
+                        {dayClasses.map((cls) => {
+                          const count = getStudentCount(cls.name);
+                          return (
+                            <button
+                              key={cls.id}
+                              className="day-class-card"
+                              onClick={() => onSelectClass(cls)}
+                            >
+                              <span className="day-class-code">{cls.name}</span>
+                              {count > 0 && <span className="day-class-count">{count}人</span>}
+                              <span className="day-class-action">→</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="empty-classes card">
+                    <div className="empty-icon">📅</div>
+                    <div className="empty-text">
+                      <strong>尚未设置上课时间</strong>
+                      <p>点击上方「管理上课时间」为班级分配上课日期</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </>
         ) : (
           <div className="empty-classes card">
