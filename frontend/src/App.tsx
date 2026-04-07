@@ -3,7 +3,8 @@ import Login from './components/Login';
 import Welcome from './components/Welcome';
 import ClassHub from './components/ClassHub';
 import DistributionFlow from './components/DistributionFlow';
-import SeatingApp from './components/SeatingApp';
+import NewestSeatingFrame from './components/NewestSeatingFrame';
+import MakeupTool from './components/MakeupTool';
 import ReLoginModal from './components/ReLoginModal';
 import type { AppScreen, ClassInfo } from './types';
 import { saveAppState, loadAppState } from './utils/appPersistence';
@@ -102,6 +103,7 @@ export default function App() {
           classes={classes}
           onSelectClass={handleSelectClass}
           onLogout={handleLogout}
+          onNavigate={handleNavigate}
         />
       )}
       {screen === 'hub' && selectedClass && (
@@ -119,10 +121,13 @@ export default function App() {
         />
       )}
       {screen === 'seating' && selectedClass && (
-        <SeatingApp
+        <NewestSeatingFrame
           classCode={selectedClass.name}
           onBack={handleBackToHub}
         />
+      )}
+      {screen === 'makeup' && (
+        <MakeupTool onBack={handleBackToWelcome} />
       )}
       {showReLogin && (
         <ReLoginModal

@@ -86,7 +86,7 @@ export interface BonusHistoryEntry {
   records: BonusHistoryRecord[];
 }
 
-export type AppScreen = 'login' | 'welcome' | 'hub' | 'flow' | 'seating' | 'overview';
+export type AppScreen = 'login' | 'welcome' | 'hub' | 'flow' | 'seating' | 'overview' | 'makeup';
 
 export type DayOfWeek = '周一' | '周二' | '周三' | '周四' | '周五' | '周六' | '周日';
 

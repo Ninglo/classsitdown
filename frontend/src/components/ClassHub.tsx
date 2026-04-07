@@ -18,7 +18,7 @@ interface FeatureItem {
 }
 
 const FEATURES: FeatureItem[] = [
-  { icon: '🪑', title: '座位表',       desc: '座位安排、轮换、导出图片',              target: 'seating' },
+  { icon: '🪑', title: '座位表',       desc: '最新座位表版本，自动读取已录入上课时间', target: 'seating' },
   { icon: '🏆', title: 'MP 积分发放',  desc: 'MP 计算、导出图片 & Excel',            target: 'flow' },
   { icon: '📋', title: '课程概览',     desc: '简报制作，模块拼接导出',                target: 'overview' },
   { icon: '📗', title: '班级日报',     desc: '在 RemoteLab 聊天中发送两份 xlsx 触发',  target: 'external-daily-report' },

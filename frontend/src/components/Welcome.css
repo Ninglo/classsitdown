@@ -294,6 +294,73 @@
   color: var(--gray-600);
 }
 
+/* Toolbox */
+.toolbox-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.toolbox-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+.toolbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.toolbox-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: rgba(253,252,249,0.9);
+  border: 1.5px solid rgba(123,168,98,0.2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: var(--shadow);
+  text-align: left;
+  width: 100%;
+}
+
+.toolbox-card:hover {
+  border-color: var(--green);
+  background: var(--green-light);
+  box-shadow: var(--shadow-md);
+}
+
+.toolbox-card-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.toolbox-card-body strong {
+  font-size: 14px;
+  color: var(--gray-800);
+  display: block;
+}
+
+.toolbox-card-body p {
+  font-size: 12px;
+  color: var(--gray-500);
+  margin: 2px 0 0;
+}
+
+.toolbox-card-arrow {
+  margin-left: auto;
+  color: var(--gray-400);
+  font-size: 14px;
+}
+
+.toolbox-card:hover .toolbox-card-arrow {
+  color: var(--green);
+}
+
 .guide-panel {
   padding: 0;
   overflow: hidden;
@@ -330,4 +397,59 @@
   border: none;
   border-top: 1px solid var(--gray-200);
   display: block;
+}
+
+/* ── Mobile ── */
+@media (max-width: 640px) {
+  .welcome-wrap {
+    padding: 20px 16px 40px;
+  }
+
+  .welcome-header {
+    flex-direction: column;
+    margin-bottom: 24px;
+    gap: 12px;
+  }
+
+  .welcome-header-right {
+    flex-direction: row-reverse;
+    align-items: center;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .greeting-text h1 { font-size: 22px; }
+  .slogan { font-size: 12px; }
+
+  /* Toolbox first on mobile */
+  .welcome-toolbox-area { order: -1; }
+
+  .toolbox-card {
+    padding: 16px 18px;
+  }
+
+  .toolbox-card-icon { font-size: 28px; }
+  .toolbox-card-body strong { font-size: 15px; }
+
+  /* Class section */
+  .section-title {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .class-grid {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+  }
+
+  .class-card {
+    padding: 16px 12px 12px;
+  }
+
+  .class-code { font-size: 20px; }
+
+  /* Hints less prominent */
+  .welcome-hint { display: none; }
+
+  .guide-panel { display: none; }
 }
