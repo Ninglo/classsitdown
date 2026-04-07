@@ -85,6 +85,7 @@ export interface CustomBlock {
 export interface OverviewContent {
   classCode: string;
   week: number;
+  challengeStartDay: DayOfWeek;
   weeklyChallenges: WeeklyChallengeDay[];
   phaseChallenges: PhaseChallengeRow[];
   challengeItems: ChallengeItem[];

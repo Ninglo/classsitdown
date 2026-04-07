@@ -14,6 +14,29 @@ const SEATING_STORAGE_KEY = 'classSeatingData';
 
 export const ALL_DAYS: DayOfWeek[] = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
+// ── Per-frame cache: avoid repeated JSON.parse of the same localStorage keys ──
+let _cacheFrame = 0;
+const _cache = new Map<string, unknown>();
+
+function cachedRead<T>(key: string): T | null {
+  const frame = typeof requestAnimationFrame !== 'undefined' ? Date.now() : 0;
+  // Invalidate cache each ~16ms (one frame) or when explicitly cleared
+  if (frame - _cacheFrame > 16) {
+    _cache.clear();
+    _cacheFrame = frame;
+  }
+  if (_cache.has(key)) return _cache.get(key) as T;
+  try {
+    const raw = localStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) as T : null;
+    _cache.set(key, parsed);
+    return parsed;
+  } catch {
+    _cache.set(key, null);
+    return null;
+  }
+}
+
 const DAY_ORDER: Record<DayOfWeek, number> = {
   '周一': 1, '周二': 2, '周三': 3, '周四': 4,
   '周五': 5, '周六': 6, '周日': 7,
@@ -22,13 +45,7 @@ const DAY_ORDER: Record<DayOfWeek, number> = {
 const NO_TIME_SORT_VALUE = 24 * 60 + 59;
 
 export function loadWeeklySchedule(): WeeklySchedule {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw) as WeeklySchedule;
-  } catch {
-    return {};
-  }
+  return cachedRead<WeeklySchedule>(STORAGE_KEY) ?? {};
 }
 
 export function saveWeeklySchedule(schedule: WeeklySchedule): void {
@@ -84,30 +101,27 @@ function parseTimeSortValue(time: string): number {
   return hour * 60 + minute;
 }
 
+function loadAllMakeupClasses(): Array<{ class_code: string; weekday?: { day: string; time?: string }; weekend?: { day: string; time?: string } }> {
+  let allClasses: Array<{ class_code: string; weekday?: { day: string; time?: string }; weekend?: { day: string; time?: string } }> = [];
+
+  const store = cachedRead<{ stages?: Record<string, { classes?: typeof allClasses }> }>('amber_makeup_stages');
+  if (store?.stages) {
+    for (const dataset of Object.values(store.stages)) {
+      if (Array.isArray(dataset?.classes)) allClasses.push(...dataset.classes);
+    }
+  }
+
+  if (allClasses.length === 0) {
+    const data = cachedRead<{ classes?: typeof allClasses }>('amber_makeup_data');
+    if (Array.isArray(data?.classes)) allClasses = data.classes;
+  }
+
+  return allClasses;
+}
+
 function loadMakeupSchedule(): WeeklySchedule {
   try {
-    // Try multi-stage store first, fall back to legacy key
-    let allClasses: Array<{ class_code: string; weekday?: { day: string }; weekend?: { day: string } }> = [];
-
-    const multiRaw = localStorage.getItem('amber_makeup_stages');
-    if (multiRaw) {
-      const store = JSON.parse(multiRaw) as { stages?: Record<string, { classes?: typeof allClasses }> };
-      if (store.stages) {
-        for (const dataset of Object.values(store.stages)) {
-          if (Array.isArray(dataset?.classes)) {
-            allClasses.push(...dataset.classes);
-          }
-        }
-      }
-    }
-
-    if (allClasses.length === 0) {
-      const legacyRaw = localStorage.getItem('amber_makeup_data');
-      if (legacyRaw) {
-        const data = JSON.parse(legacyRaw) as { classes?: typeof allClasses };
-        if (Array.isArray(data.classes)) allClasses = data.classes;
-      }
-    }
+    const allClasses = loadAllMakeupClasses();
 
     if (allClasses.length === 0) return {};
 
@@ -133,25 +147,7 @@ function loadMakeupSchedule(): WeeklySchedule {
 function loadMakeupDetails(): ClassScheduleDetail[] {
   const details: ClassScheduleDetail[] = [];
   try {
-    let allClasses: Array<{ class_code: string; weekday?: { day: string; time?: string }; weekend?: { day: string; time?: string } }> = [];
-
-    const multiRaw = localStorage.getItem('amber_makeup_stages');
-    if (multiRaw) {
-      const store = JSON.parse(multiRaw) as { stages?: Record<string, { classes?: typeof allClasses }> };
-      if (store.stages) {
-        for (const dataset of Object.values(store.stages)) {
-          if (Array.isArray(dataset?.classes)) allClasses.push(...dataset.classes);
-        }
-      }
-    }
-
-    if (allClasses.length === 0) {
-      const legacyRaw = localStorage.getItem('amber_makeup_data');
-      if (legacyRaw) {
-        const data = JSON.parse(legacyRaw) as { classes?: typeof allClasses };
-        if (Array.isArray(data.classes)) allClasses = data.classes;
-      }
-    }
+    const allClasses = loadAllMakeupClasses();
 
     for (const cls of allClasses) {
       for (const slot of [cls.weekday, cls.weekend]) {
@@ -173,17 +169,15 @@ function loadMakeupDetails(): ClassScheduleDetail[] {
   return details;
 }
 
+type SeatingData = Record<string, {
+  weekday?: { locationInfo?: { weekday?: string; time?: string } };
+  weekend?: { locationInfo?: { weekday?: string; time?: string } };
+}>;
+
 function loadSeatingSchedule(): WeeklySchedule {
   try {
-    const raw = localStorage.getItem(SEATING_STORAGE_KEY);
-    if (!raw) {
-      return {};
-    }
-
-    const parsed = JSON.parse(raw) as Record<string, {
-      weekday?: { locationInfo?: { weekday?: string; time?: string } };
-      weekend?: { locationInfo?: { weekday?: string; time?: string } };
-    }>;
+    const parsed = cachedRead<SeatingData>(SEATING_STORAGE_KEY);
+    if (!parsed) return {};
 
     const schedule: WeeklySchedule = {};
     for (const day of ALL_DAYS) {
@@ -220,13 +214,8 @@ function loadSeatingSchedule(): WeeklySchedule {
 
 function loadSeatingDetails(): ClassScheduleDetail[] {
   try {
-    const raw = localStorage.getItem(SEATING_STORAGE_KEY);
-    if (!raw) return [];
-
-    const parsed = JSON.parse(raw) as Record<string, {
-      weekday?: { locationInfo?: { weekday?: string; time?: string } };
-      weekend?: { locationInfo?: { weekday?: string; time?: string } };
-    }>;
+    const parsed = cachedRead<SeatingData>(SEATING_STORAGE_KEY);
+    if (!parsed) return [];
 
     const details: ClassScheduleDetail[] = [];
 

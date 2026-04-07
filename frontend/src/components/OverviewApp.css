@@ -111,19 +111,7 @@
   text-align: right;
 }
 
-.ov-week-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.ov-day-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.ov-day-field span,
+.ov-field-caption,
 .ov-listening-head,
 .ov-phase-header {
   font-size: 12px;
@@ -131,13 +119,36 @@
   color: #5d6b79;
 }
 
-.ov-day-field textarea,
+.ov-week-table-wrap {
+  overflow-x: auto;
+}
+
+.ov-week-table {
+  display: grid;
+  gap: 1px;
+  min-width: max-content;
+  background: rgba(221, 211, 195, 0.92);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.ov-week-head {
+  padding: 10px 12px;
+  background: rgba(239, 231, 216, 0.95);
+  font-size: 13px;
+  font-weight: 700;
+  color: #4c5a69;
+}
+
+.ov-week-table textarea,
 .ov-phase-cell textarea,
 .ov-block-card textarea {
   width: 100%;
   resize: vertical;
-  min-height: 88px;
+  min-height: 110px;
   padding: 10px 12px;
+  border-radius: 0;
+  border: none;
 }
 
 .ov-phase-table {
@@ -402,13 +413,21 @@
   color: #4c5a69;
 }
 
-.ov-paper-days {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+.ov-paper-week-axis {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--gray-600);
 }
 
-.ov-paper-day-card,
+.ov-paper-week-table {
+  display: grid;
+  gap: 1px;
+  overflow-x: auto;
+  background: rgba(221, 211, 195, 0.92);
+}
+
+.ov-paper-week-head,
+.ov-paper-week-cell,
 .ov-paper-task,
 .ov-paper-phase-table,
 .ov-paper-listening,
@@ -416,20 +435,24 @@
   border-radius: 16px;
 }
 
-.ov-paper-day-card {
-  min-height: 108px;
+.ov-paper-week-head,
+.ov-paper-week-cell {
   padding: 12px;
   background: rgba(255, 255, 255, 0.84);
-  border: 1px solid rgba(221, 211, 195, 0.9);
 }
 
-.ov-paper-day-card h4,
+.ov-paper-week-head {
+  font-weight: 700;
+  color: #4c5a69;
+  background: rgba(239, 231, 216, 0.95);
+}
+
 .ov-paper-task h4 {
   margin-bottom: 6px;
   color: #4c5a69;
 }
 
-.ov-paper-day-card p,
+.ov-paper-week-cell,
 .ov-paper-task p,
 .ov-paper-phase-cell,
 .ov-paper-phase-stage,
@@ -607,6 +630,7 @@
   .ov-toolbar,
   .ov-section-head,
   .ov-inline-actions,
+  .ov-inline-actions-start,
   .ov-three-cols,
   .ov-history-item,
   .ov-paper-header {
@@ -614,8 +638,6 @@
     align-items: stretch;
   }
 
-  .ov-week-grid,
-  .ov-paper-days,
   .ov-slider-grid,
   .ov-listening-table,
   .ov-phase-table,

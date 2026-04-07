@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { ClassInfo } from '../types';
 import type {
   ChallengeItem,
   CustomBlock,
+  ListeningFontOption,
   ListeningMaterialItem,
   MediaAnnotation,
   MediaItem,
@@ -10,7 +11,7 @@ import type {
   PhaseChallengeRow,
 } from '../types/overview';
 import { getClassProfile } from '../utils/classProfiles';
-import { getOrderedChallengeDays } from '../utils/classSchedule';
+import { ALL_DAYS, getOrderedChallengeDays } from '../utils/classSchedule';
 import {
   addCommunicationRecord,
   createChallengeItem,
@@ -25,6 +26,7 @@ import {
   syncPhaseChallenges,
   syncWeeklyChallengeDays,
 } from '../utils/overviewData';
+import { buildListeningMaterials, extractEnglishWords } from '../utils/wordTranslation';
 import { getWeekRange, getCurrentWeek, formatDateShort } from '../utils/weekNumber';
 import './OverviewApp.css';
 
@@ -45,6 +47,12 @@ async function fileToDataUrl(file: File): Promise<string> {
 function formatHistoryDate(timestamp: number): string {
   const date = new Date(timestamp);
   return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function orderDaysFromStart(startDay: string): string[] {
+  const startIndex = ALL_DAYS.indexOf(startDay as typeof ALL_DAYS[number]);
+  if (startIndex === -1) return [...ALL_DAYS];
+  return [...ALL_DAYS.slice(startIndex), ...ALL_DAYS.slice(0, startIndex)];
 }
 
 function StudentPicker({
@@ -309,15 +317,20 @@ function CustomTableEditor({
 
 export default function OverviewApp({ classInfo, onBack }: Props) {
   const classCode = classInfo.name;
-  const profile = getClassProfile(classCode);
-  const studentNames = profile?.students.map((student) => student.chineseName) ?? [];
-  const orderedDays = getOrderedChallengeDays(classCode);
+  const profile = useMemo(() => getClassProfile(classCode), [classCode]);
+  const studentNames = useMemo(
+    () => profile?.students.map((student) => student.chineseName) ?? [],
+    [profile],
+  );
+  const orderedDays = useMemo(() => getOrderedChallengeDays(classCode), [classCode]);
   const [week, setWeek] = useState(() => getCurrentWeek());
   const [content, setContent] = useState<OverviewContent>(() =>
     loadDraft(classCode, getCurrentWeek()) ?? createEmptyContent(classCode, getCurrentWeek(), { orderedDays, studentNames }),
   );
   const [exporting, setExporting] = useState(false);
   const [notice, setNotice] = useState('');
+  const [listeningBatchInput, setListeningBatchInput] = useState('');
+  const [translating, setTranslating] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -330,16 +343,26 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
 
   useEffect(() => {
     setContent((current) => {
-      const next = {
+      const nextChallenges = syncWeeklyChallengeDays(current.weeklyChallenges, orderedDays);
+      const nextPhases = syncPhaseChallenges(current.phaseChallenges, studentNames);
+      const nextSelected = current.communicationPlan.selectedStudents.filter((name) => studentNames.includes(name));
+
+      const challengesChanged = nextChallenges.length !== current.weeklyChallenges.length ||
+        nextChallenges.some((item, i) => item.day !== current.weeklyChallenges[i]?.day);
+      const phasesChanged = nextPhases.some((row, i) =>
+        row.selectedStudents.length !== current.phaseChallenges[i]?.selectedStudents.length,
+      );
+      const selectedChanged = nextSelected.length !== current.communicationPlan.selectedStudents.length;
+
+      if (!challengesChanged && !phasesChanged && !selectedChanged) return current;
+
+      return {
         ...current,
-        weeklyChallenges: syncWeeklyChallengeDays(current.weeklyChallenges, orderedDays),
-        phaseChallenges: syncPhaseChallenges(current.phaseChallenges, studentNames),
-        communicationPlan: {
-          ...current.communicationPlan,
-          selectedStudents: current.communicationPlan.selectedStudents.filter((name) => studentNames.includes(name)),
-        },
+        challengeStartDay: current.challengeStartDay || orderedDays[0] || '周一',
+        weeklyChallenges: nextChallenges,
+        phaseChallenges: nextPhases,
+        communicationPlan: { ...current.communicationPlan, selectedStudents: nextSelected },
       };
-      return JSON.stringify(next) === JSON.stringify(current) ? current : next;
     });
   }, [orderedDays, studentNames]);
 
@@ -351,6 +374,26 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
     setWeek(nextWeek);
     const draft = loadDraft(classCode, nextWeek);
     setContent(draft ?? createEmptyContent(classCode, nextWeek, { orderedDays, studentNames }));
+  }
+
+  async function handleListeningBatchImport() {
+    const words = extractEnglishWords(listeningBatchInput);
+    if (words.length === 0) {
+      setNotice('先把英文单词整段贴进来。');
+      return;
+    }
+
+    setTranslating(true);
+    try {
+      const materials = await buildListeningMaterials(listeningBatchInput);
+      updateContent((current) => ({
+        ...current,
+        listeningMaterials: materials,
+      }));
+      setNotice(`已识别 ${materials.length} 个单词，中文可以继续手动改。`);
+    } finally {
+      setTranslating(false);
+    }
   }
 
   function toggleName(list: string[], name: string): string[] {
@@ -393,8 +436,19 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
     setNotice('交流名单已记忆，下次会继续提醒哪些学生已交流。');
   }
 
-  const communicationStats = getCommunicationStats(classCode, studentNames);
+  const communicationStats = useMemo(
+    () => getCommunicationStats(classCode, studentNames),
+    [classCode, studentNames, content.communicationPlan.selectedStudents],
+  );
   const weekRange = getWeekRange(week);
+  const orderedChallengeDays = useMemo(
+    () => orderDaysFromStart(content.challengeStartDay || orderedDays[0] || '周一'),
+    [content.challengeStartDay, orderedDays],
+  );
+  const weeklyChallengeRows = useMemo(
+    () => orderedChallengeDays.map((day) => content.weeklyChallenges.find((item) => item.day === day) ?? { day, task: '' }),
+    [content.weeklyChallenges, orderedChallengeDays],
+  );
 
   return (
     <div className="ov-shell fade-in">
@@ -423,14 +477,33 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
           <section className="ov-editor-section">
             <div className="ov-section-head">
               <h3>① 本周挑战</h3>
-              <p>从这个班级本周第一次上课的那天开始排。</p>
+              <p>横排表格展示，第一天也可以手动切换。</p>
             </div>
-            <div className="ov-week-grid">
-              {content.weeklyChallenges.map((item) => (
-                <label key={item.day} className="ov-day-field">
-                  <span>{item.day}</span>
+            <div className="ov-inline-actions ov-inline-actions-start">
+              <span className="ov-field-caption">第一天</span>
+              <select
+                value={content.challengeStartDay || orderedDays[0]}
+                onChange={(event) =>
+                  updateContent((current) => ({
+                    ...current,
+                    challengeStartDay: event.target.value as OverviewContent['challengeStartDay'],
+                  }))
+                }
+              >
+                {ALL_DAYS.map((day) => (
+                  <option key={day} value={day}>{day}</option>
+                ))}
+              </select>
+            </div>
+            <div className="ov-week-table-wrap">
+              <div className="ov-week-table" style={{ gridTemplateColumns: `repeat(${weeklyChallengeRows.length}, minmax(180px, 1fr))` }}>
+                {weeklyChallengeRows.map((item) => (
+                  <div key={`${item.day}_head`} className="ov-week-head">{item.day}</div>
+                ))}
+                {weeklyChallengeRows.map((item) => (
                   <textarea
-                    rows={2}
+                    key={item.day}
+                    rows={4}
                     placeholder="这一天的具体任务"
                     value={item.task}
                     onChange={(event) =>
@@ -442,8 +515,8 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
                       }))
                     }
                   />
-                </label>
-              ))}
+                ))}
+              </div>
             </div>
           </section>
 
@@ -579,24 +652,33 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
           <section className="ov-editor-section">
             <div className="ov-section-head">
               <h3>④ 下周听读语料</h3>
-              <p>可以单独出英文和中文，预览会自动整理成四线三格感的版式。</p>
+              <p>整段粘贴英文后自动拆词补中文，中文仍保留手动修改权限。</p>
             </div>
+            <textarea
+              rows={4}
+              placeholder="直接粘贴一整段单词或英文短语，例如: apple, banana, pear"
+              value={listeningBatchInput}
+              onChange={(event) => setListeningBatchInput(event.target.value)}
+            />
             <div className="ov-inline-actions">
               <select
                 value={content.listeningFont}
                 onChange={(event) =>
-                  updateContent((current) => ({ ...current, listeningFont: event.target.value as OverviewContent['listeningFont'] }))
+                  updateContent((current) => ({ ...current, listeningFont: event.target.value as ListeningFontOption }))
                 }
               >
                 <option value="guide">四线三格</option>
                 <option value="print">标准印刷</option>
                 <option value="rounded">圆润手写</option>
               </select>
+              <button className="btn btn-primary btn-sm" onClick={() => void handleListeningBatchImport()} disabled={translating}>
+                {translating ? '识别中...' : '识别英文并补中文'}
+              </button>
               <button className="btn btn-ghost btn-sm" onClick={() => updateContent((current) => ({
                 ...current,
                 listeningMaterials: [...current.listeningMaterials, createListeningItem()],
               }))}>
-                + 添加语料
+                + 手动补一条
               </button>
             </div>
             <div className="ov-listening-table">
@@ -828,12 +910,15 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
 
             <section className="ov-paper-section">
               <div className="ov-paper-title">① 本周挑战</div>
-              <div className="ov-paper-days">
-                {content.weeklyChallenges.map((item) => (
-                  <article key={item.day} className="ov-paper-day-card">
-                    <h4>{item.day}</h4>
-                    <p>{item.task || '待补充'}</p>
-                  </article>
+              <div className="ov-paper-week-axis">
+                <span>第一天：{content.challengeStartDay || orderedDays[0]}</span>
+              </div>
+              <div className="ov-paper-week-table" style={{ gridTemplateColumns: `repeat(${weeklyChallengeRows.length}, minmax(180px, 1fr))` }}>
+                {weeklyChallengeRows.map((item) => (
+                  <div key={`${item.day}_preview_head`} className="ov-paper-week-head">{item.day}</div>
+                ))}
+                {weeklyChallengeRows.map((item) => (
+                  <div key={`${item.day}_preview_body`} className="ov-paper-week-cell">{item.task || '待补充'}</div>
                 ))}
               </div>
             </section>

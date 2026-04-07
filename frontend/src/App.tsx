@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import Login from './components/Login';
 import Welcome from './components/Welcome';
 import ClassHub from './components/ClassHub';
 import DistributionFlow from './components/DistributionFlow';
 import NewestSeatingFrame from './components/NewestSeatingFrame';
 import MakeupTool from './components/MakeupTool';
-import OverviewApp from './components/OverviewApp';
 import ReLoginModal from './components/ReLoginModal';
+
+const OverviewApp = lazy(() => import('./components/OverviewApp'));
 import type { AppScreen, ClassInfo } from './types';
 import { saveAppState, loadAppState } from './utils/appPersistence';
 
@@ -128,10 +129,12 @@ export default function App() {
         />
       )}
       {screen === 'overview' && selectedClass && (
-        <OverviewApp
-          classInfo={selectedClass}
-          onBack={handleBackToHub}
-        />
+        <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: '#999' }}>加载中...</div>}>
+          <OverviewApp
+            classInfo={selectedClass}
+            onBack={handleBackToHub}
+          />
+        </Suspense>
       )}
       {screen === 'makeup' && (
         <MakeupTool onBack={handleBackToWelcome} />
