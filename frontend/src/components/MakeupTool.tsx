@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import type { MakeupDataset, MakeupOccurrence, MakeupClassMeta, ScoredCandidate } from '../types/makeup';
-import { loadMakeupData, saveMakeupData, clearMakeupData, parseJsonImport, parseXlsxImport } from '../utils/makeupData';
+import type { MakeupDataset, MakeupOccurrence, MakeupClassMeta, ScoredCandidate, StageKey } from '../types/makeup';
+import { ALL_STAGES } from '../types/makeup';
+import { loadMultiStageStore, saveStageData, clearStageData, loadStageData, getLoadedStages, parseJsonImport, parseXlsxImport } from '../utils/makeupData';
 import { calcScore } from '../utils/makeupScoring';
 import { generateParentMessage, generateTeacherMessage } from '../utils/makeupMessages';
 import { initWeekDetection, parseQuickInput, getSortedWeekLabels } from '../utils/makeupParser';
@@ -18,6 +19,10 @@ function compareOccByWeek(a: MakeupOccurrence, b: MakeupOccurrence): number {
 }
 
 export default function MakeupTool({ onBack }: Props) {
+  // Multi-stage
+  const [activeStage, setActiveStage] = useState<StageKey>(() => loadMultiStageStore().activeStage);
+  const [stageInfo, setStageInfo] = useState(() => getLoadedStages());
+
   // Data
   const [dataset, setDataset] = useState<MakeupDataset | null>(null);
   const [importStatus, setImportStatus] = useState('');
@@ -34,11 +39,13 @@ export default function MakeupTool({ onBack }: Props) {
   // Interaction
   const [activeCandidate, setActiveCandidate] = useState<{ origin: MakeupOccurrence; candidate: MakeupOccurrence } | null>(null);
 
-  // Load on mount
+  // Load on mount & stage switch
   useEffect(() => {
-    const saved = loadMakeupData();
-    if (saved) setDataset(saved);
-  }, []);
+    const saved = loadStageData(activeStage);
+    setDataset(saved);
+    resetForm();
+    setImportStatus('');
+  }, [activeStage]);
 
   // ── Derived data ──
 
@@ -133,18 +140,20 @@ export default function MakeupTool({ onBack }: Props) {
       if (file.name.endsWith('.json')) {
         data = await parseJsonImport(file);
       } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-        data = await parseXlsxImport(file);
+        data = await parseXlsxImport(file, activeStage);
       } else {
         throw new Error('只支持 .json 或 .xlsx 文件');
       }
-      saveMakeupData(data);
+      data.meta.active_stage = activeStage;
+      saveStageData(activeStage, data);
       setDataset(data);
+      setStageInfo(getLoadedStages());
       setImportStatus(`已导入 ${data.classes.length} 个班级，${data.occurrences.length} 条课次`);
       resetForm();
     } catch (err) {
       setImportStatus('导入失败：' + (err instanceof Error ? err.message : String(err)));
     }
-  }, []);
+  }, [activeStage]);
 
   function resetForm() {
     setOriginClass('');
@@ -152,6 +161,10 @@ export default function MakeupTool({ onBack }: Props) {
     setSelectedSlots(new Set());
     setActiveCandidate(null);
     setQuickFeedback('');
+  }
+
+  function handleStageSwitch(stage: StageKey) {
+    setActiveStage(stage);
   }
 
   function handleClassChange(code: string) {
@@ -185,7 +198,6 @@ export default function MakeupTool({ onBack }: Props) {
       setMissedLessonId(result.missedOccId);
     }
 
-    // Build new slot set from parsed results
     const newSlots = new Set<string>();
     for (const p of result.makeupPairs) {
       newSlots.add(`${p.day}|${p.time}`);
@@ -203,8 +215,9 @@ export default function MakeupTool({ onBack }: Props) {
   }
 
   function handleClearData() {
-    clearMakeupData();
+    clearStageData(activeStage);
     setDataset(null);
+    setStageInfo(getLoadedStages());
     resetForm();
     setImportStatus('数据已清除');
   }
@@ -213,10 +226,30 @@ export default function MakeupTool({ onBack }: Props) {
     navigator.clipboard.writeText(text).catch(() => {});
   }
 
-  // ── Day name for display ──
+  // ── Display helpers ──
   const DOW_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   const today = new Date();
   const todayStr = `${today.getMonth() + 1}月${today.getDate()}日 ${DOW_NAMES[today.getDay()]}`;
+
+  const loadedSet = new Set(stageInfo.map((s) => s.stage));
+
+  // Group slots by day for display
+  const slotsByDay = useMemo(() => {
+    if (!dataset) return [];
+    const groups: { day: string; slots: typeof dataset.slots }[] = [];
+    let currentDay = '';
+    let currentGroup: typeof dataset.slots = [];
+    for (const slot of dataset.slots) {
+      if (slot.day !== currentDay) {
+        if (currentGroup.length) groups.push({ day: currentDay, slots: currentGroup });
+        currentDay = slot.day;
+        currentGroup = [];
+      }
+      currentGroup.push(slot);
+    }
+    if (currentGroup.length) groups.push({ day: currentDay, slots: currentGroup });
+    return groups;
+  }, [dataset]);
 
   // ── Render ──
 
@@ -227,14 +260,27 @@ export default function MakeupTool({ onBack }: Props) {
         <h2 className="makeup-title">补课助手</h2>
         {dataset && (
           <span className="makeup-meta-badge">
-            {dataset.classes.length} 班 · {dataset.occurrences.length} 课次
+            {activeStage} · {dataset.classes.length} 班 · {dataset.occurrences.length} 课次
           </span>
         )}
       </div>
 
-      {/* Import section */}
+      {/* Stage tabs + Import section */}
       <section className="makeup-section card">
         <h3 className="makeup-section-title">进度表数据</h3>
+        <div className="makeup-stage-tabs">
+          {ALL_STAGES.map((s) => (
+            <button
+              key={s}
+              className={`makeup-stage-tab${s === activeStage ? ' active' : ''}${loadedSet.has(s) ? ' loaded' : ''}`}
+              onClick={() => handleStageSwitch(s)}
+            >
+              {s}
+              {loadedSet.has(s) && <span className="makeup-stage-dot" />}
+            </button>
+          ))}
+        </div>
+
         {dataset ? (
           <div className="makeup-data-loaded">
             <div className="makeup-data-pills">
@@ -252,10 +298,10 @@ export default function MakeupTool({ onBack }: Props) {
           </div>
         ) : (
           <div className="makeup-data-empty">
-            <p>请上传进度表（.json 或 .xlsx）</p>
+            <p>当前学段 <strong>{activeStage}</strong> 尚未导入进度表</p>
             <div className="makeup-data-actions">
               <input ref={fileRef} type="file" accept=".json,.xlsx,.xls" style={{ flex: 1 }} />
-              <button className="btn btn-primary btn-sm" onClick={handleImport}>导入</button>
+              <button className="btn btn-primary btn-sm" onClick={handleImport}>导入 {activeStage} 进度表</button>
             </div>
             {importStatus && <p className="makeup-status">{importStatus}</p>}
           </div>
@@ -334,19 +380,24 @@ export default function MakeupTool({ onBack }: Props) {
               <div className="makeup-field">
                 <label>家长可接受的补课时间</label>
                 <div className="makeup-slot-grid">
-                  {dataset.slots.map((slot) => {
-                    const key = `${slot.day}|${slot.time}`;
-                    return (
-                      <label key={key} className={`makeup-slot-chip ${selectedSlots.has(key) ? 'selected' : ''}`}>
-                        <input
-                          type="checkbox"
-                          checked={selectedSlots.has(key)}
-                          onChange={() => toggleSlot(key)}
-                        />
-                        <span>{slot.day} {slot.time}</span>
-                      </label>
-                    );
-                  })}
+                  {slotsByDay.map(({ day, slots }) => (
+                    <div key={day} className="makeup-slot-day-group">
+                      <div className="makeup-slot-day-label">{day}</div>
+                      {slots.map((slot) => {
+                        const key = `${slot.day}|${slot.time}`;
+                        return (
+                          <label key={key} className={`makeup-slot-chip ${selectedSlots.has(key) ? 'selected' : ''}`}>
+                            <input
+                              type="checkbox"
+                              checked={selectedSlots.has(key)}
+                              onChange={() => toggleSlot(key)}
+                            />
+                            <span>{slot.time}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
                 <p className="makeup-helper">可多选。系统会按勾选顺序展示，再按推荐优先级排序。</p>
               </div>

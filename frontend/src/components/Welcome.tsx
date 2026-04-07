@@ -199,14 +199,6 @@ export default function Welcome({ teacherName, classes, onSelectClass, onLogout,
           )}
         </div>
 
-        <div className="welcome-hint card">
-          <div className="hint-icon">💡</div>
-          <div className="hint-text">
-            <strong>操作流程</strong>
-            <p>选择班级 → 选择功能 → 上传数据文件 → 确认明细 → 生成图片 & Excel</p>
-          </div>
-        </div>
-
         <div className="guide-panel card">
           <button className="guide-toggle" onClick={() => setShowGuide((v) => !v)}>
             <span className="guide-toggle-icon">📖</span>

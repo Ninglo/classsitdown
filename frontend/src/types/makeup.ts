@@ -91,3 +91,16 @@ export interface WeekContext {
   weekDateMap: Map<string, { start: Date; end: Date }>;
   invalidWeekLabels: string[];
 }
+
+export const ALL_STAGES = ['L0', 'L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9'] as const;
+export type StageKey = typeof ALL_STAGES[number];
+
+export interface StageSlot {
+  stage: StageKey;
+  dataset: MakeupDataset;
+}
+
+export interface MultiStageStore {
+  stages: Partial<Record<StageKey, MakeupDataset>>;
+  activeStage: StageKey;
+}

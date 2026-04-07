@@ -1,6 +1,13 @@
 import type { ClassInfo, DayOfWeek } from '../types';
 
 export type WeeklySchedule = Partial<Record<DayOfWeek, string[]>>;
+export interface ClassScheduleDetail {
+  classCode: string;
+  day: DayOfWeek;
+  time: string;
+  sortValue: number;
+  source: 'seating' | 'manual' | 'makeup';
+}
 
 const STORAGE_KEY = 'amber_weekly_schedule';
 const SEATING_STORAGE_KEY = 'classSeatingData';
@@ -11,6 +18,8 @@ const DAY_ORDER: Record<DayOfWeek, number> = {
   '周一': 1, '周二': 2, '周三': 3, '周四': 4,
   '周五': 5, '周六': 6, '周日': 7,
 };
+
+const NO_TIME_SORT_VALUE = 24 * 60 + 59;
 
 export function loadWeeklySchedule(): WeeklySchedule {
   try {
@@ -55,6 +64,113 @@ function extractDaysFromClassTime(classTime: string): DayOfWeek[] {
     .map((item) => normalizeDayToken(item))
     .filter((item): item is DayOfWeek => Boolean(item));
   return [...new Set(days)];
+}
+
+function extractTimeToken(raw: string): string {
+  const normalized = raw.replace(/\s+/g, '');
+  const matched = normalized.match(/(\d{1,2})[:：](\d{2})/);
+  if (!matched) return '';
+  const hour = matched[1].padStart(2, '0');
+  return `${hour}:${matched[2]}`;
+}
+
+function parseTimeSortValue(time: string): number {
+  if (!time) return NO_TIME_SORT_VALUE;
+  const matched = time.match(/^(\d{2}):(\d{2})$/);
+  if (!matched) return NO_TIME_SORT_VALUE;
+  const hour = Number(matched[1]);
+  const minute = Number(matched[2]);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return NO_TIME_SORT_VALUE;
+  return hour * 60 + minute;
+}
+
+function loadMakeupSchedule(): WeeklySchedule {
+  try {
+    // Try multi-stage store first, fall back to legacy key
+    let allClasses: Array<{ class_code: string; weekday?: { day: string }; weekend?: { day: string } }> = [];
+
+    const multiRaw = localStorage.getItem('amber_makeup_stages');
+    if (multiRaw) {
+      const store = JSON.parse(multiRaw) as { stages?: Record<string, { classes?: typeof allClasses }> };
+      if (store.stages) {
+        for (const dataset of Object.values(store.stages)) {
+          if (Array.isArray(dataset?.classes)) {
+            allClasses.push(...dataset.classes);
+          }
+        }
+      }
+    }
+
+    if (allClasses.length === 0) {
+      const legacyRaw = localStorage.getItem('amber_makeup_data');
+      if (legacyRaw) {
+        const data = JSON.parse(legacyRaw) as { classes?: typeof allClasses };
+        if (Array.isArray(data.classes)) allClasses = data.classes;
+      }
+    }
+
+    if (allClasses.length === 0) return {};
+
+    const schedule: WeeklySchedule = {};
+    for (const cls of allClasses) {
+      for (const slot of [cls.weekday, cls.weekend]) {
+        const day = slot?.day as DayOfWeek | undefined;
+        if (day && ALL_DAYS.includes(day)) {
+          const list = schedule[day] ?? [];
+          if (!list.includes(cls.class_code)) {
+            list.push(cls.class_code);
+            schedule[day] = list;
+          }
+        }
+      }
+    }
+    return schedule;
+  } catch {
+    return {};
+  }
+}
+
+function loadMakeupDetails(): ClassScheduleDetail[] {
+  const details: ClassScheduleDetail[] = [];
+  try {
+    let allClasses: Array<{ class_code: string; weekday?: { day: string; time?: string }; weekend?: { day: string; time?: string } }> = [];
+
+    const multiRaw = localStorage.getItem('amber_makeup_stages');
+    if (multiRaw) {
+      const store = JSON.parse(multiRaw) as { stages?: Record<string, { classes?: typeof allClasses }> };
+      if (store.stages) {
+        for (const dataset of Object.values(store.stages)) {
+          if (Array.isArray(dataset?.classes)) allClasses.push(...dataset.classes);
+        }
+      }
+    }
+
+    if (allClasses.length === 0) {
+      const legacyRaw = localStorage.getItem('amber_makeup_data');
+      if (legacyRaw) {
+        const data = JSON.parse(legacyRaw) as { classes?: typeof allClasses };
+        if (Array.isArray(data.classes)) allClasses = data.classes;
+      }
+    }
+
+    for (const cls of allClasses) {
+      for (const slot of [cls.weekday, cls.weekend]) {
+        const day = normalizeDayToken(slot?.day ?? '');
+        if (!day) continue;
+        const time = extractTimeToken(slot?.time ?? '');
+        details.push({
+          classCode: cls.class_code,
+          day,
+          time,
+          sortValue: parseTimeSortValue(time),
+          source: 'makeup',
+        });
+      }
+    }
+  } catch {
+    return [];
+  }
+  return details;
 }
 
 function loadSeatingSchedule(): WeeklySchedule {
@@ -102,15 +218,125 @@ function loadSeatingSchedule(): WeeklySchedule {
   }
 }
 
+function loadSeatingDetails(): ClassScheduleDetail[] {
+  try {
+    const raw = localStorage.getItem(SEATING_STORAGE_KEY);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw) as Record<string, {
+      weekday?: { locationInfo?: { weekday?: string; time?: string } };
+      weekend?: { locationInfo?: { weekday?: string; time?: string } };
+    }>;
+
+    const details: ClassScheduleDetail[] = [];
+
+    for (const [classCode, config] of Object.entries(parsed ?? {})) {
+      for (const slot of [config?.weekday?.locationInfo, config?.weekend?.locationInfo]) {
+        const rawText = [slot?.weekday ?? '', slot?.time ?? ''].join(' ');
+        const days = extractDaysFromClassTime(rawText);
+        const time = extractTimeToken(rawText);
+        for (const day of days) {
+          details.push({
+            classCode,
+            day,
+            time,
+            sortValue: parseTimeSortValue(time),
+            source: 'seating',
+          });
+        }
+      }
+    }
+
+    return details;
+  } catch {
+    return [];
+  }
+}
+
+function loadManualDetails(): ClassScheduleDetail[] {
+  const manual = loadWeeklySchedule();
+  const details: ClassScheduleDetail[] = [];
+  for (const day of ALL_DAYS) {
+    for (const classCode of manual[day] ?? []) {
+      details.push({
+        classCode,
+        day,
+        time: '',
+        sortValue: NO_TIME_SORT_VALUE,
+        source: 'manual',
+      });
+    }
+  }
+  return details;
+}
+
+function uniqueDetails(details: ClassScheduleDetail[]): ClassScheduleDetail[] {
+  const seen = new Set<string>();
+  return details.filter((detail) => {
+    const key = `${detail.classCode}_${detail.day}_${detail.time}_${detail.source}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function getClassScheduleDetails(classCode: string): ClassScheduleDetail[] {
+  return uniqueDetails([
+    ...loadSeatingDetails(),
+    ...loadManualDetails(),
+    ...loadMakeupDetails(),
+  ])
+    .filter((item) => item.classCode === classCode)
+    .sort((a, b) => {
+      if (DAY_ORDER[a.day] !== DAY_ORDER[b.day]) return DAY_ORDER[a.day] - DAY_ORDER[b.day];
+      if (a.sortValue !== b.sortValue) return a.sortValue - b.sortValue;
+      return a.classCode.localeCompare(b.classCode);
+    });
+}
+
 export function getResolvedSchedule(classCodes: string[]): WeeklySchedule {
   const seating = loadSeatingSchedule();
   const manual = loadWeeklySchedule();
+  const makeup = loadMakeupSchedule();
   const resolved: WeeklySchedule = {};
 
   for (const day of ALL_DAYS) {
-    const seatingList = (seating[day] ?? []).filter((code) => classCodes.includes(code));
-    const manualList = (manual[day] ?? []).filter((code) => classCodes.includes(code) && !seatingList.includes(code));
-    resolved[day] = [...seatingList, ...manualList];
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const source of [seating, manual, makeup]) {
+      for (const code of source[day] ?? []) {
+        if (classCodes.includes(code) && !seen.has(code)) {
+          seen.add(code);
+          result.push(code);
+        }
+      }
+    }
+    resolved[day] = result;
+  }
+
+  const detailMap = new Map<string, ClassScheduleDetail>();
+  for (const detail of uniqueDetails([
+    ...loadSeatingDetails(),
+    ...loadManualDetails(),
+    ...loadMakeupDetails(),
+  ])) {
+    if (!classCodes.includes(detail.classCode)) continue;
+    const key = `${detail.classCode}_${detail.day}`;
+    const existing = detailMap.get(key);
+    if (!existing || detail.sortValue < existing.sortValue) {
+      detailMap.set(key, detail);
+    }
+  }
+
+  for (const day of ALL_DAYS) {
+    resolved[day] = [...(resolved[day] ?? [])].sort((a, b) => {
+      const detailA = detailMap.get(`${a}_${day}`);
+      const detailB = detailMap.get(`${b}_${day}`);
+      const sortA = detailA?.sortValue ?? NO_TIME_SORT_VALUE;
+      const sortB = detailB?.sortValue ?? NO_TIME_SORT_VALUE;
+      if (sortA !== sortB) return sortA - sortB;
+      return a.localeCompare(b);
+    });
   }
 
   return resolved;
@@ -122,20 +348,28 @@ export function getClassDays(classCode: string): DayOfWeek[] {
 }
 
 export function sortClassesBySchedule(classes: ClassInfo[]): ClassInfo[] {
-  const sched = getResolvedSchedule(classes.map((item) => item.name));
+  const detailMap = new Map<string, ClassScheduleDetail[]>();
+  for (const item of classes) {
+    detailMap.set(item.name, getClassScheduleDetails(item.name));
+  }
+
   return [...classes].sort((a, b) => {
-    const daysA = ALL_DAYS.filter((d) => (sched[d] ?? []).includes(a.name));
-    const daysB = ALL_DAYS.filter((d) => (sched[d] ?? []).includes(b.name));
-    const minA = daysA.length ? Math.min(...daysA.map((d) => DAY_ORDER[d])) : 8;
-    const minB = daysB.length ? Math.min(...daysB.map((d) => DAY_ORDER[d])) : 8;
+    const detailA = detailMap.get(a.name) ?? [];
+    const detailB = detailMap.get(b.name) ?? [];
+    const minA = detailA.length ? DAY_ORDER[detailA[0].day] : 8;
+    const minB = detailB.length ? DAY_ORDER[detailB[0].day] : 8;
     if (minA !== minB) return minA - minB;
-    if (minA < 8) {
-      const bestDayA = ALL_DAYS.find((d) => DAY_ORDER[d] === minA)!;
-      const bestDayB = ALL_DAYS.find((d) => DAY_ORDER[d] === minB)!;
-      const posA = (sched[bestDayA] ?? []).indexOf(a.name);
-      const posB = (sched[bestDayB] ?? []).indexOf(b.name);
-      if (posA !== posB) return posA - posB;
-    }
+    const timeA = detailA[0]?.sortValue ?? NO_TIME_SORT_VALUE;
+    const timeB = detailB[0]?.sortValue ?? NO_TIME_SORT_VALUE;
+    if (timeA !== timeB) return timeA - timeB;
     return a.name.localeCompare(b.name);
   });
+}
+
+export function getOrderedChallengeDays(classCode: string): DayOfWeek[] {
+  const details = getClassScheduleDetails(classCode);
+  const firstDay = details[0]?.day ?? getClassDays(classCode)[0] ?? '周一';
+  const startIndex = ALL_DAYS.indexOf(firstDay);
+  if (startIndex === -1) return [...ALL_DAYS];
+  return [...ALL_DAYS.slice(startIndex), ...ALL_DAYS.slice(0, startIndex)];
 }

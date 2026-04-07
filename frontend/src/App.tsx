@@ -5,6 +5,7 @@ import ClassHub from './components/ClassHub';
 import DistributionFlow from './components/DistributionFlow';
 import NewestSeatingFrame from './components/NewestSeatingFrame';
 import MakeupTool from './components/MakeupTool';
+import OverviewApp from './components/OverviewApp';
 import ReLoginModal from './components/ReLoginModal';
 import type { AppScreen, ClassInfo } from './types';
 import { saveAppState, loadAppState } from './utils/appPersistence';
@@ -123,6 +124,12 @@ export default function App() {
       {screen === 'seating' && selectedClass && (
         <NewestSeatingFrame
           classCode={selectedClass.name}
+          onBack={handleBackToHub}
+        />
+      )}
+      {screen === 'overview' && selectedClass && (
+        <OverviewApp
+          classInfo={selectedClass}
           onBack={handleBackToHub}
         />
       )}

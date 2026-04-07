@@ -1,23 +1,81 @@
 import * as XLSX from 'xlsx';
-import type { MakeupDataset, MakeupClassMeta, MakeupOccurrence, MakeupSlot } from '../types/makeup';
+import type { MakeupDataset, MakeupClassMeta, MakeupOccurrence, MakeupSlot, StageKey, MultiStageStore } from '../types/makeup';
+import { ALL_STAGES } from '../types/makeup';
 
-const STORAGE_KEY = 'amber_makeup_data';
+const STORAGE_KEY = 'amber_makeup_data'; // legacy single-stage key
+const MULTI_STAGE_KEY = 'amber_makeup_stages';
 
-// ── localStorage persistence ──
+// ── Multi-stage localStorage persistence ──
 
-export function loadMakeupData(): MakeupDataset | null {
+export function loadMultiStageStore(): MultiStageStore {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
+    const raw = localStorage.getItem(MULTI_STAGE_KEY);
+    if (raw) return JSON.parse(raw) as MultiStageStore;
+  } catch { /* fall through */ }
+
+  // Migrate legacy single-stage data
+  try {
+    const legacy = localStorage.getItem(STORAGE_KEY);
+    if (legacy) {
+      const data = JSON.parse(legacy) as MakeupDataset;
+      const stage = (data.meta?.active_stage || 'L2') as StageKey;
+      const store: MultiStageStore = { stages: { [stage]: data }, activeStage: stage };
+      localStorage.setItem(MULTI_STAGE_KEY, JSON.stringify(store));
+      localStorage.removeItem(STORAGE_KEY);
+      return store;
+    }
+  } catch { /* fall through */ }
+
+  return { stages: {}, activeStage: 'L2' };
+}
+
+export function saveMultiStageStore(store: MultiStageStore): void {
+  localStorage.setItem(MULTI_STAGE_KEY, JSON.stringify(store));
+}
+
+export function loadStageData(stage: StageKey): MakeupDataset | null {
+  const store = loadMultiStageStore();
+  return store.stages[stage] ?? null;
+}
+
+export function saveStageData(stage: StageKey, data: MakeupDataset): void {
+  const store = loadMultiStageStore();
+  store.stages[stage] = data;
+  store.activeStage = stage;
+  saveMultiStageStore(store);
+}
+
+export function clearStageData(stage: StageKey): void {
+  const store = loadMultiStageStore();
+  delete store.stages[stage];
+  saveMultiStageStore(store);
+}
+
+export function getLoadedStages(): { stage: StageKey; classCount: number; occCount: number }[] {
+  const store = loadMultiStageStore();
+  const result: { stage: StageKey; classCount: number; occCount: number }[] = [];
+  for (const s of ALL_STAGES) {
+    const d = store.stages[s];
+    if (d) result.push({ stage: s, classCount: d.classes.length, occCount: d.occurrences.length });
+  }
+  return result;
+}
+
+// Legacy compat — returns any loaded data (first available stage)
+export function loadMakeupData(): MakeupDataset | null {
+  const store = loadMultiStageStore();
+  return store.stages[store.activeStage] ?? Object.values(store.stages)[0] ?? null;
 }
 
 export function saveMakeupData(data: MakeupDataset): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  const stage = (data.meta?.active_stage || 'L2') as StageKey;
+  saveStageData(stage, data);
 }
 
 export function clearMakeupData(): void {
-  localStorage.removeItem(STORAGE_KEY);
+  const store = loadMultiStageStore();
+  delete store.stages[store.activeStage];
+  saveMultiStageStore(store);
 }
 
 // ── JSON import ──
@@ -79,9 +137,19 @@ function modeFromWeekLabel(label: string): '周中' | '周末' | '' {
   return '';
 }
 
-export async function parseXlsxImport(file: File): Promise<MakeupDataset> {
+function detectStageFromName(name: string): StageKey {
+  const m = name.match(/L(\d)/i);
+  if (m) {
+    const key = `L${m[1]}` as StageKey;
+    if (ALL_STAGES.includes(key)) return key;
+  }
+  return 'L2'; // default
+}
+
+export async function parseXlsxImport(file: File, stageOverride?: StageKey): Promise<MakeupDataset> {
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
+  const detectedStage = stageOverride ?? detectStageFromName(file.name);
 
   const sheetName = wb.SheetNames.find((n) => n.includes('进度表'));
   if (!sheetName) throw new Error('找不到"进度表"工作表');
@@ -173,7 +241,8 @@ export async function parseXlsxImport(file: File): Promise<MakeupDataset> {
     }
   }
 
-  const slots = Object.values(slotOrder).sort((a, b) => a.time.localeCompare(b.time) || a.day.localeCompare(b.day));
+  const DAY_SORT: Record<string, number> = { '周一': 1, '周二': 2, '周三': 3, '周四': 4, '周五': 5, '周六': 6, '周日': 7 };
+  const slots = Object.values(slotOrder).sort((a, b) => (DAY_SORT[a.day] ?? 9) - (DAY_SORT[b.day] ?? 9) || a.time.localeCompare(b.time));
   const classList = Object.values(classes).sort((a, b) => a.class_code.localeCompare(b.class_code));
 
   // Extract stage catalog from other sheets
@@ -184,7 +253,7 @@ export async function parseXlsxImport(file: File): Promise<MakeupDataset> {
     occurrences,
     slots,
     meta: {
-      active_stage: 'L2',
+      active_stage: detectedStage,
       supported_stages: supportedStages,
       source_name: file.name,
       imported_at: new Date().toISOString().replace(/\.\d+Z$/, ''),

@@ -35,12 +35,11 @@ export default function ClassHub({ classInfo, onNavigate, onBack }: Props) {
 
   function handleCard(item: FeatureItem) {
     if (item.target === 'external-daily-report') return;
-    if (item.target === 'overview') return;
     onNavigate(item.target);
   }
 
   const isAvailable = (item: FeatureItem) =>
-    item.target !== 'external-daily-report' && item.target !== 'overview';
+    item.target !== 'external-daily-report';
 
   return (
     <div className="hub-wrap fade-in">
@@ -78,7 +77,6 @@ export default function ClassHub({ classInfo, onNavigate, onBack }: Props) {
               <div className="hub-card-title">{f.title}</div>
               <div className="hub-card-desc">{f.desc}</div>
               {isDailyReport && <div className="hub-coming-badge">聊天触发</div>}
-              {f.target === 'overview' && <div className="hub-coming-badge">开发中</div>}
             </button>
           );
         })}
