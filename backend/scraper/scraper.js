@@ -75,7 +75,7 @@ class EducationSystemScraper {
 
     const map = await this.page.evaluate(() => {
       const normalize = (text) => (text || '').replace(/\s+/g, ' ').trim();
-      const codePattern = /\b([KJLM]\d{2,4})\b/i;
+      const codePattern = /\b([A-Z]{1,3}\d{2,4})\b/i;
       const links = Array.from(document.querySelectorAll('a[href*="/admin/squad_console?id="]'));
 
       const entries = [];
@@ -1158,8 +1158,8 @@ class EducationSystemScraper {
           // 获取"我的班级列表"后面的文本
           const afterClassList = allText.substring(classListMatch);
 
-          // 查找接下来的班级号（通常是K/J/L/M开头的，后面跟数字）
-          const classPattern = /([KJLMkjlm]\d{2,4})/g;
+          // 查找接下来的班级号（字母前缀 + 数字，例如 K328 / BB102）
+          const classPattern = /([A-Za-z]{1,3}\d{2,4})/g;
           const matches = afterClassList.match(classPattern);
 
           if (matches) {
@@ -1176,7 +1176,7 @@ class EducationSystemScraper {
         // 如果仍未找到，尝试从整个页面中提取班级号
         if (results.length === 0) {
           // 查找所有可能是班级号的文本（大写字母+数字）
-          const allClassPattern = /([KJLMkjlm]\d{2,4})/g;
+          const allClassPattern = /([A-Za-z]{1,3}\d{2,4})/g;
           const allMatches = allText.match(allClassPattern);
 
           if (allMatches) {
@@ -1200,7 +1200,7 @@ class EducationSystemScraper {
           const squadId = urlParams.get('squad_id');
           const text = link.textContent?.trim();
 
-          if (squadId && text && text.match(/^[KJLMkjlm]\d{2,4}$/)) {
+          if (squadId && text && text.match(/^[A-Za-z]{1,3}\d{2,4}$/)) {
             classMap.set(text.toUpperCase(), squadId);
           }
         }

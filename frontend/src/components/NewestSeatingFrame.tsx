@@ -1,39 +1,72 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { resolveSeatingKey } from '../utils/classProfiles';
 
 interface Props {
   classCode: string;
   onBack: () => void;
+  active: boolean;
 }
 
-export default function NewestSeatingFrame({ classCode, onBack }: Props) {
-  const target = `/seating/?class=${encodeURIComponent(classCode)}`;
+export default function NewestSeatingFrame({ classCode, onBack, active }: Props) {
+  // Use the actual key from classSeatingData (may differ in case from scraper's uppercase)
+  const seatingKey = resolveSeatingKey(classCode) ?? classCode;
+  const src = `/seating/?class=${encodeURIComponent(seatingKey)}`;
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    window.location.assign(target);
-  }, [target]);
+    setLoaded(false);
+  }, [src]);
 
   return (
-    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
-      <div style={{ maxWidth: 420, width: '100%', borderRadius: 20, padding: 24, background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(221,217,208,0.55)', boxShadow: '0 14px 38px rgba(120,100,80,0.1)', textAlign: 'center' }}>
-        <strong style={{ display: 'block', fontSize: 20, color: '#33414f' }}>正在打开座位表</strong>
-        <p style={{ margin: '10px 0 16px', fontSize: 14, color: '#6a746f' }}>{classCode}</p>
-        <button
-          type="button"
-          onClick={() => window.location.assign(target)}
-          style={{ border: 'none', borderRadius: 999, padding: '10px 18px', background: '#7ba862', color: '#fff', fontSize: 14 }}
-        >
-          如果没有自动跳转，点这里
-        </button>
-        <div style={{ marginTop: 10 }}>
-          <button
-            type="button"
-            onClick={onBack}
-            style={{ border: 'none', background: 'transparent', color: '#7b7b76', fontSize: 13 }}
-          >
-            返回上一页
-          </button>
+    <div
+      aria-hidden={!active}
+      style={active ? {
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+        background: '#fff',
+        zIndex: 50,
+      } : {
+        position: 'absolute',
+        inset: 0,
+        width: 1,
+        height: 1,
+        overflow: 'hidden',
+        opacity: 0,
+        pointerEvents: 'none',
+      }}
+    >
+      {active && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '10px 16px',
+          borderBottom: '1px solid rgba(221,217,208,0.55)',
+          background: 'rgba(255,255,255,0.95)',
+          flexShrink: 0,
+        }}>
+          <button className="back-btn" onClick={onBack}>← 返回</button>
+          <span style={{ fontSize: 14, color: '#6a746f' }}>{classCode} · 座位表</span>
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: '#9aa39f' }}>
+            {loaded ? '已预热' : '正在预加载'}
+          </span>
         </div>
-      </div>
+      )}
+      {active && !loaded && (
+        <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>加载中...</div>
+      )}
+      <iframe
+        src={src}
+        style={{
+          flex: 1, border: 'none', width: '100%',
+          opacity: active && loaded ? 1 : 0,
+          transition: 'opacity 0.2s',
+        }}
+        onLoad={() => setLoaded(true)}
+        loading="eager"
+        title={`${classCode} 座位表`}
+      />
     </div>
   );
 }

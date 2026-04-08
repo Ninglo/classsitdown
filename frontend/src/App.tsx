@@ -5,6 +5,7 @@ import ClassHub from './components/ClassHub';
 import DistributionFlow from './components/DistributionFlow';
 import NewestSeatingFrame from './components/NewestSeatingFrame';
 import MakeupTool from './components/MakeupTool';
+import DailyReportApp from './components/DailyReportApp';
 import ReLoginModal from './components/ReLoginModal';
 
 const OverviewApp = lazy(() => import('./components/OverviewApp'));
@@ -122,10 +123,11 @@ export default function App() {
           onSessionExpired={handleSessionExpired}
         />
       )}
-      {screen === 'seating' && selectedClass && (
+      {selectedClass && (screen === 'hub' || screen === 'seating') && (
         <NewestSeatingFrame
           classCode={selectedClass.name}
           onBack={handleBackToHub}
+          active={screen === 'seating'}
         />
       )}
       {screen === 'overview' && selectedClass && (
@@ -138,6 +140,9 @@ export default function App() {
       )}
       {screen === 'makeup' && (
         <MakeupTool onBack={handleBackToWelcome} />
+      )}
+      {screen === 'daily-report' && selectedClass && (
+        <DailyReportApp classInfo={selectedClass} onBack={handleBackToHub} />
       )}
       {showReLogin && (
         <ReLoginModal
