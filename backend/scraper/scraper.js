@@ -70,8 +70,8 @@ class EducationSystemScraper {
     }
 
     await this.ensurePageReady();
-    await this.page.goto(`${this.baseUrl}/admin`, { waitUntil: 'networkidle2', timeout: 15000 });
-    await this.sleep(800);
+    await this.page.goto(`${this.baseUrl}/admin`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await this.page.waitForSelector('a[href*="/admin/squad_console?id="]', { timeout: 6000 }).catch(() => {});
 
     const map = await this.page.evaluate(() => {
       const normalize = (text) => (text || '').replace(/\s+/g, ' ').trim();
@@ -485,11 +485,19 @@ class EducationSystemScraper {
       for (const url of loginUrls) {
         try {
           console.log(`🔄 尝试访问: ${url}`);
-          await this.page.goto(url, { waitUntil: 'networkidle2', timeout: 5000 });
-          const content = await this.page.content();
+          await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 3500 });
+          const hasLoginForm = await this.page.evaluate(() => {
+            const text = document.body?.innerText || '';
+            return Boolean(
+              document.querySelector('input[type="password"]')
+              || document.querySelector('[name="password"]')
+              || text.includes('密码')
+              || text.toLowerCase().includes('login')
+            );
+          });
 
           // 检查是否是登录页面（不是404）
-          if (!content.includes('404') && (content.includes('input') || content.includes('login') || content.includes('密码'))) {
+          if (hasLoginForm) {
             console.log(`✅ 找到登录页面: ${url}`);
             loginPageFound = true;
             break;
@@ -508,8 +516,6 @@ class EducationSystemScraper {
         throw new Error('无法找到登录页面，已保存页面截图和HTML到 /tmp/ 用于调试');
       }
 
-      // 取得页面HTML用于调试
-      const pageContent = await this.page.content();
       console.log('📄 登录页面已加载，尝试查找输入字段...');
 
       // 尝试多种选择器来找到用户名和密码字段
@@ -591,18 +597,22 @@ class EducationSystemScraper {
       console.log('🔄 正在提交登录...');
       const submitButton = await this.page.$('button[type="submit"]') || await this.page.$('button');
       if (submitButton) {
-        // 同时监听导航和超时
-        const navigationPromise = this.page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 }).catch(() => {
-          // 如果导航超时，继续（可能是AJAX登录）
-          console.log('⚠️ 导航超时，继续进行（可能是AJAX登录）');
+        await submitButton.click();
+        await Promise.race([
+          this.page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 8000 }),
+          this.page.waitForFunction(
+            () => !document.querySelector('input[type="password"]'),
+            { timeout: 8000 }
+          ),
+          this.page.waitForFunction(
+            () => /\/admin(\/|$|\?)/.test(window.location.pathname),
+            { timeout: 8000 }
+          ),
+        ]).catch(() => {
+          console.log('⚠️ 登录后状态检测超时，继续尝试读取会话');
           return true;
         });
-
-        await submitButton.click();
-        await navigationPromise;
-
-        // 等待一下以确保页面加载完成
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await this.page.waitForNetworkIdle({ idleTime: 500, timeout: 1500 }).catch(() => {});
       } else {
         throw new Error('未找到登录按钮');
       }

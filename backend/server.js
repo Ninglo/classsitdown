@@ -923,9 +923,22 @@ app.get('/api/health', (req, res) => {
 
 // 托管前端静态文件
 const distDir = path.join(__dirname, '../frontend/dist');
-app.use(express.static(distDir, { index: 'index.html' }));
+app.use('/assets', express.static(path.join(distDir, 'assets'), {
+  index: false,
+  maxAge: '1y',
+  immutable: true,
+}));
+app.use(express.static(distDir, {
+  index: 'index.html',
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
 // SPA fallback — 兼容 Express 5
 app.use((_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(distDir, 'index.html'));
 });
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Fragment, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { MakeupDataset, MakeupOccurrence, MakeupClassMeta, ScoredCandidate, StageKey } from '../types/makeup';
 import { ALL_STAGES } from '../types/makeup';
 import { loadMultiStageStore, saveStageData, clearStageData, loadStageData, getLoadedStages, parseJsonImport, parseXlsxImport } from '../utils/makeupData';
@@ -18,6 +18,31 @@ function compareOccByWeek(a: MakeupOccurrence, b: MakeupOccurrence): number {
   return a.week_label.localeCompare(b.week_label);
 }
 
+const DAY_ORDER = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+const MAKEUP_TOOL_VERSION = '时间矩阵版 2026-04-08 16:15';
+
+function timeToMinutes(value: string): number | null {
+  const match = String(value || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+}
+
+function normalizeSlotBucketTime(value: string): string {
+  const minutes = timeToMinutes(value);
+  if (minutes == null) return value;
+  const rounded = Math.round(minutes / 10) * 10;
+  const hour = Math.floor(rounded / 60) % 24;
+  const minute = rounded % 60;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function isWithinFuzzyWindow(baseTime: string, targetTime: string, tolerance = 5): boolean {
+  const baseMinutes = timeToMinutes(baseTime);
+  const targetMinutes = timeToMinutes(targetTime);
+  if (baseMinutes == null || targetMinutes == null) return false;
+  return Math.abs(baseMinutes - targetMinutes) <= tolerance;
+}
+
 export default function MakeupTool({ onBack }: Props) {
   // Multi-stage
   const [activeStage, setActiveStage] = useState<StageKey>(() => loadMultiStageStore().activeStage);
@@ -31,7 +56,7 @@ export default function MakeupTool({ onBack }: Props) {
   // Form
   const [originClass, setOriginClass] = useState('');
   const [missedLessonId, setMissedLessonId] = useState('');
-  const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
+  const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [studentName, setStudentName] = useState('');
   const [quickInput, setQuickInput] = useState('');
   const [quickFeedback, setQuickFeedback] = useState('');
@@ -90,19 +115,20 @@ export default function MakeupTool({ onBack }: Props) {
   // ── Results ──
 
   const resultsBySlot = useMemo(() => {
-    if (!originOcc || !dataset || selectedSlots.size === 0) return new Map<string, ScoredCandidate[]>();
-    const slotArr = [...selectedSlots];
-    const slotIndex = new Map(slotArr.map((k, i) => [k, i]));
+    if (!originOcc || !dataset || selectedSlots.length === 0) return new Map<string, ScoredCandidate[]>();
     const bySlot = new Map<string, ScoredCandidate[]>();
 
     for (const candidate of dataset.occurrences) {
       if (candidate.class_code === originOcc.class_code) continue;
       if (!evaluateLessonMatch(originOcc, candidate).matched) continue;
-      const slotKey = `${candidate.day}|${candidate.time}`;
-      if (!slotIndex.has(slotKey)) continue;
-      const scored = calcScore(originOcc, candidate, slotIndex.get(slotKey)!, classesByCode);
-      if (!bySlot.has(slotKey)) bySlot.set(slotKey, []);
-      bySlot.get(slotKey)!.push(scored);
+      const matchedSlot = selectedSlots.find((slotKey) => {
+        const [day, time] = slotKey.split('|');
+        return day === candidate.day && isWithinFuzzyWindow(time, candidate.time);
+      });
+      if (!matchedSlot) continue;
+      const scored = calcScore(originOcc, candidate, selectedSlots.indexOf(matchedSlot), classesByCode);
+      if (!bySlot.has(matchedSlot)) bySlot.set(matchedSlot, []);
+      bySlot.get(matchedSlot)!.push(scored);
     }
 
     for (const arr of bySlot.values()) {
@@ -158,7 +184,7 @@ export default function MakeupTool({ onBack }: Props) {
   function resetForm() {
     setOriginClass('');
     setMissedLessonId('');
-    setSelectedSlots(new Set());
+    setSelectedSlots([]);
     setActiveCandidate(null);
     setQuickFeedback('');
   }
@@ -179,12 +205,26 @@ export default function MakeupTool({ onBack }: Props) {
   }
 
   function toggleSlot(key: string) {
-    setSelectedSlots((prev) => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
+    setSelectedSlots((prev) => prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]);
     setActiveCandidate(null);
+  }
+
+  function applyRequestedSlot(day: string, time: string, mode: 'exact' | 'after' | 'before', availableKeys: string[]): string[] {
+    const dayKeys = availableKeys.filter((slotKey) => slotKey.startsWith(`${day}|`));
+    const targetMinutes = timeToMinutes(time);
+    if (targetMinutes == null) return [];
+    if (mode === 'after') {
+      return dayKeys.filter((slotKey) => (timeToMinutes(slotKey.split('|')[1]) ?? -1) >= targetMinutes);
+    }
+    if (mode === 'before') {
+      return dayKeys.filter((slotKey) => (timeToMinutes(slotKey.split('|')[1]) ?? 9999) <= targetMinutes);
+    }
+    const exact = dayKeys.find((slotKey) => slotKey.endsWith(`|${time}`));
+    if (exact) return [exact];
+    const sorted = dayKeys
+      .map((slotKey) => ({ slotKey, diff: Math.abs((timeToMinutes(slotKey.split('|')[1]) ?? 0) - targetMinutes) }))
+      .sort((a, b) => a.diff - b.diff);
+    return sorted[0] ? [sorted[0].slotKey] : [];
   }
 
   function handleQuickParse() {
@@ -198,18 +238,24 @@ export default function MakeupTool({ onBack }: Props) {
       setMissedLessonId(result.missedOccId);
     }
 
-    const newSlots = new Set<string>();
-    for (const p of result.makeupPairs) {
-      newSlots.add(`${p.day}|${p.time}`);
+    const availableSlotKeys = dataset.slots.map((slot) => `${slot.day}|${normalizeSlotBucketTime(slot.time)}`);
+    const orderedSlots: string[] = [];
+    const pushSlot = (slotKey: string) => {
+      if (!orderedSlots.includes(slotKey)) orderedSlots.push(slotKey);
+    };
+    for (const req of result.makeupRequests) {
+      for (const slotKey of applyRequestedSlot(req.day, req.time, req.mode, availableSlotKeys)) {
+        pushSlot(slotKey);
+      }
     }
     if (result.makeupDaysOnly.length && dataset) {
       for (const slot of dataset.slots) {
         if (result.makeupDaysOnly.includes(slot.day)) {
-          newSlots.add(`${slot.day}|${slot.time}`);
+          pushSlot(`${slot.day}|${normalizeSlotBucketTime(slot.time)}`);
         }
       }
     }
-    setSelectedSlots(newSlots);
+    setSelectedSlots(orderedSlots);
     setActiveCandidate(null);
     setQuickFeedback(result.feedbackLines.length ? '✓ ' + result.feedbackLines.join(' ｜ ') : '');
   }
@@ -233,22 +279,26 @@ export default function MakeupTool({ onBack }: Props) {
 
   const loadedSet = new Set(stageInfo.map((s) => s.stage));
 
-  // Group slots by day for display
-  const slotsByDay = useMemo(() => {
-    if (!dataset) return [];
-    const groups: { day: string; slots: typeof dataset.slots }[] = [];
-    let currentDay = '';
-    let currentGroup: typeof dataset.slots = [];
+  const slotMatrix = useMemo(() => {
+    if (!dataset) return { times: [] as string[], slotKeys: new Set<string>() };
+    const slotKeys = new Set(dataset.slots.map((slot) => `${slot.day}|${normalizeSlotBucketTime(slot.time)}`));
+    const rowStats = new Map<string, { weekdayCount: number; weekendCount: number }>();
     for (const slot of dataset.slots) {
-      if (slot.day !== currentDay) {
-        if (currentGroup.length) groups.push({ day: currentDay, slots: currentGroup });
-        currentDay = slot.day;
-        currentGroup = [];
-      }
-      currentGroup.push(slot);
+      const bucket = normalizeSlotBucketTime(slot.time);
+      const current = rowStats.get(bucket) || { weekdayCount: 0, weekendCount: 0 };
+      if (slot.day === '周六' || slot.day === '周日') current.weekendCount += 1;
+      else current.weekdayCount += 1;
+      rowStats.set(bucket, current);
     }
-    if (currentGroup.length) groups.push({ day: currentDay, slots: currentGroup });
-    return groups;
+    const times = [...new Set(dataset.slots.map((slot) => normalizeSlotBucketTime(slot.time)))].sort((a, b) => {
+      const aStats = rowStats.get(a) || { weekdayCount: 0, weekendCount: 0 };
+      const bStats = rowStats.get(b) || { weekdayCount: 0, weekendCount: 0 };
+      const aPriority = aStats.weekdayCount > 0 ? 0 : 1;
+      const bPriority = bStats.weekdayCount > 0 ? 0 : 1;
+      if (aPriority !== bPriority) return aPriority - bPriority;
+      return a.localeCompare(b, 'zh-CN');
+    });
+    return { times, slotKeys };
   }, [dataset]);
 
   // ── Render ──
@@ -258,6 +308,7 @@ export default function MakeupTool({ onBack }: Props) {
       <div className="makeup-topbar">
         <button className="back-btn" onClick={onBack}>← 返回</button>
         <h2 className="makeup-title">补课助手</h2>
+        <span className="makeup-version-badge">{MAKEUP_TOOL_VERSION}</span>
         {dataset && (
           <span className="makeup-meta-badge">
             {activeStage} · {dataset.classes.length} 班 · {dataset.occurrences.length} 课次
@@ -380,26 +431,36 @@ export default function MakeupTool({ onBack }: Props) {
               <div className="makeup-field">
                 <label>家长可接受的补课时间</label>
                 <div className="makeup-slot-grid">
-                  {slotsByDay.map(({ day, slots }) => (
-                    <div key={day} className="makeup-slot-day-group">
-                      <div className="makeup-slot-day-label">{day}</div>
-                      {slots.map((slot) => {
-                        const key = `${slot.day}|${slot.time}`;
-                        return (
-                          <label key={key} className={`makeup-slot-chip ${selectedSlots.has(key) ? 'selected' : ''}`}>
-                            <input
-                              type="checkbox"
-                              checked={selectedSlots.has(key)}
-                              onChange={() => toggleSlot(key)}
-                            />
-                            <span>{slot.time}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  ))}
+                  <div className="makeup-slot-matrix">
+                    <div className="makeup-slot-corner" />
+                    {DAY_ORDER.map((day) => (
+                      <div key={day} className="makeup-slot-day-head">{day}</div>
+                    ))}
+                    {slotMatrix.times.map((time) => (
+                      <Fragment key={time}>
+                        <div className="makeup-slot-time-head">{time}</div>
+                        {DAY_ORDER.map((day) => {
+                          const key = `${day}|${time}`;
+                          const exists = slotMatrix.slotKeys.has(key);
+                          if (!exists) return <div key={key} className="makeup-slot-cell empty" />;
+                          return (
+                            <div key={key} className="makeup-slot-cell">
+                              <label className={`makeup-slot-toggle ${selectedSlots.includes(key) ? 'selected' : ''}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedSlots.includes(key)}
+                                  onChange={() => toggleSlot(key)}
+                                />
+                                <span>{time}</span>
+                              </label>
+                            </div>
+                          );
+                        })}
+                      </Fragment>
+                    ))}
+                  </div>
                 </div>
-                <p className="makeup-helper">可多选。系统会按勾选顺序展示，再按推荐优先级排序。</p>
+                <p className="makeup-helper">可多选。系统会按勾选顺序展示，再按推荐优先级排序；前后 5 分钟视为同一时间档。</p>
               </div>
             </section>
 
@@ -411,7 +472,7 @@ export default function MakeupTool({ onBack }: Props) {
                   <span className="pill">原班级：{originOcc.class_code}</span>
                   <span className="pill">课次：{originOcc.lesson}</span>
                   <span className="pill">原时间：{originOcc.day} {originOcc.time}</span>
-                  <span className="pill">{selectedSlots.size ? `已选时间：${selectedSlots.size}个` : '还没选补课时间'}</span>
+                  <span className="pill">{selectedSlots.length ? `已选时间：${selectedSlots.length}个` : '还没选补课时间'}</span>
                   {totalMatches > 0 && <span className="pill">候选班：{totalMatches}个</span>}
                 </div>
               )}
@@ -419,13 +480,13 @@ export default function MakeupTool({ onBack }: Props) {
               {/* Candidates */}
               {!originOcc ? (
                 <div className="makeup-empty">先选原班级、请假课次，再勾选备选时间。</div>
-              ) : selectedSlots.size === 0 ? (
+              ) : selectedSlots.length === 0 ? (
                 <div className="makeup-empty">请先勾选家长能接受的补课时间。</div>
               ) : totalMatches === 0 ? (
                 <div className="makeup-empty">这些时间里没有找到进度相同的候选班。</div>
               ) : (
                 <div className="makeup-results">
-                  {[...selectedSlots].map((slotKey) => {
+                  {selectedSlots.map((slotKey) => {
                     const rows = resultsBySlot.get(slotKey);
                     if (!rows || !rows.length) return null;
                     const [day, time] = slotKey.split('|');
@@ -447,6 +508,7 @@ export default function MakeupTool({ onBack }: Props) {
                                 <div className="makeup-candidate-meta">
                                   <span>{row.candidate.week_label}</span>
                                   <span>{row.candidate.lesson}</span>
+                                  <span>时间：{row.candidate.day} {row.candidate.time}</span>
                                   <span>班主任：{row.candidate.head_teacher || '未知'}</span>
                                   <span>老师：{row.candidate.teacher || '未知'}</span>
                                   <span>{row.candidate.campus || '校区待确认'}</span>

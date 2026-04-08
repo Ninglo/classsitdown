@@ -77,6 +77,8 @@ function normalizeLessonText(lesson: string): string {
     .replace(/[（【]/g, '(')
     .replace(/[）】]/g, ')')
     .replace(/[：]/g, ':')
+    .replace(/\(\s*跳过[^)]*\)/g, '')
+    .replace(/跳过\s*\d+(?:[，,、]\s*\d+)*/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }

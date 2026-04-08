@@ -7,6 +7,36 @@ const DAY_CHAR_MAP: Record<string, string> = {
 
 const MISSED_KEYWORDS = ['请假', '缺课', '缺了', '请了假', '缺'];
 
+function normalizeNaturalTime(period: string | undefined, hourText: string, minuteText?: string): string | null {
+  let hour = parseInt(hourText, 10);
+  if (Number.isNaN(hour)) return null;
+  let minute = 0;
+  if (minuteText === '半') minute = 30;
+  else if (minuteText != null && minuteText !== '') minute = parseInt(minuteText, 10);
+  if (Number.isNaN(minute) || minute < 0 || minute > 59) return null;
+  if ((period === '下午' || period === '晚上' || period === '傍晚') && hour < 12) hour += 12;
+  if (period === '中午' && hour < 11) hour += 12;
+  if (hour > 23) return null;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function extractTimedRequests(text: string): { day: string; time: string; mode: 'exact' | 'after' | 'before'; pos: number; raw: string }[] {
+  const requests: { day: string; time: string; mode: 'exact' | 'after' | 'before'; pos: number; raw: string }[] = [];
+  const timedRe = /(?:周|星期)([一二三四五六日天])\s*(上午|早上|中午|下午|晚上|傍晚)?\s*(\d{1,2})(?:\s*(?:[:：点时])\s*(半|\d{1,2}))?(?:\s*分)?\s*(左右|前|后|以前|以后|之前|之后)?/g;
+  let match: RegExpExecArray | null;
+  while ((match = timedRe.exec(text)) !== null) {
+    const day = DAY_CHAR_MAP[match[1]] || `周${match[1]}`;
+    const time = normalizeNaturalTime(match[2], match[3], match[4]);
+    if (!time) continue;
+    const qualifier = match[5] || '';
+    let mode: 'exact' | 'after' | 'before' = 'exact';
+    if (qualifier === '后' || qualifier === '以后' || qualifier === '之后') mode = 'after';
+    else if (qualifier === '前' || qualifier === '以前' || qualifier === '之前') mode = 'before';
+    requests.push({ day, time, mode, pos: match.index, raw: match[0] });
+  }
+  return requests;
+}
+
 // ── Week helpers ──
 
 export function getWeekNumber(val: string | null): number | null {
@@ -140,22 +170,40 @@ export function selectMissedLesson(
   missedDay: string,
   preferredWeekTag: string | null,
   occByClass: Map<string, MakeupOccurrence[]>,
+  missedModeHint?: '周中' | '周末' | null,
 ): {
   selected: MakeupOccurrence | null;
   matchedExactly: boolean;
   error: string | null;
   availableWeekLabels: string[];
 } {
-  if (!classCode || !missedDay) {
+  if (!classCode || (!missedDay && !missedModeHint)) {
     return { selected: null, matchedExactly: false, error: null, availableWeekLabels: [] };
   }
-  const missedMode = (missedDay === '周六' || missedDay === '周日') ? '周末' : '周中';
-  const dayMatches = (occByClass.get(classCode) || []).filter((o) => o.day === missedDay);
+  const allMatches = occByClass.get(classCode) || [];
+  const missedMode = missedModeHint || ((missedDay === '周六' || missedDay === '周日') ? '周末' : '周中');
+  const dayMatches = missedDay ? allMatches.filter((o) => o.day === missedDay) : [];
+  const modeMatches = allMatches.filter((o) => o.mode === missedMode);
+
   if (!dayMatches.length) {
-    return { selected: null, matchedExactly: false, error: `该班级没有 ${missedDay} 的课次数据`, availableWeekLabels: [] };
+    if (!missedDay && modeMatches.length) {
+      const availableWeekLabels = getSortedWeekLabels(modeMatches);
+      if (preferredWeekTag) {
+        const exact = modeMatches.find((o) => sameWeekTag(o.week_label, preferredWeekTag));
+        if (exact) return { selected: exact, matchedExactly: true, error: null, availableWeekLabels };
+      }
+      const fallback = modeMatches.slice().sort(compareOccByWeek);
+      return { selected: fallback[0] || null, matchedExactly: false, error: null, availableWeekLabels };
+    }
+    return {
+      selected: null,
+      matchedExactly: false,
+      error: missedDay ? `该班级没有 ${missedDay} 的课次数据` : `该班级没有 ${missedMode} 的课次数据`,
+      availableWeekLabels: [],
+    };
   }
-  const modeMatches = dayMatches.filter((o) => o.mode === missedMode);
-  const pool = modeMatches.length ? modeMatches : dayMatches;
+  const narrowedModeMatches = dayMatches.filter((o) => o.mode === missedMode);
+  const pool = narrowedModeMatches.length ? narrowedModeMatches : dayMatches;
   const availableWeekLabels = getSortedWeekLabels(pool);
 
   if (preferredWeekTag) {
@@ -181,6 +229,7 @@ export function parseQuickInput(
 ): QuickParseResult {
   const result: QuickParseResult = {
     classCode: null, missedDay: null, missedOccId: null,
+    makeupRequests: [],
     makeupPairs: [], makeupDaysOnly: [],
     weekTag: null, weekSource: null, feedbackLines: [], selectionError: null,
   };
@@ -194,14 +243,7 @@ export function parseQuickInput(
   }
 
   // 2. Day+time pairs
-  const pairs: { day: string; time: string; pos: number }[] = [];
-  const pairRe = /(?:周|星期)([一二三四五六日天])\s*(\d{1,2})[:：](\d{2})/g;
-  let pm: RegExpExecArray | null;
-  while ((pm = pairRe.exec(text)) !== null) {
-    const day = DAY_CHAR_MAP[pm[1]] || `周${pm[1]}`;
-    const time = pm[2].padStart(2, '0') + ':' + pm[3];
-    pairs.push({ day, time, pos: pm.index });
-  }
+  const timedRequests = extractTimedRequests(text);
 
   // 3. Day-only references
   const allDays: { day: string; pos: number; paired: boolean }[] = [];
@@ -209,7 +251,7 @@ export function parseQuickInput(
   let dm: RegExpExecArray | null;
   while ((dm = dayRe.exec(text)) !== null) {
     const day = DAY_CHAR_MAP[dm[1]] || `周${dm[1]}`;
-    const paired = pairs.some((p) => Math.abs(p.pos - dm!.index) < 3);
+    const paired = timedRequests.some((p) => Math.abs(p.pos - dm!.index) < 8);
     allDays.push({ day, pos: dm.index, paired });
   }
 
@@ -222,37 +264,44 @@ export function parseQuickInput(
 
   // 5. Interpret
   let missedDay: string | null = null;
-  const makeupPairs: { day: string; time: string }[] = [];
+  let missedModeHint: '周中' | '周末' | null = null;
+  const makeupRequests: { day: string; time: string; mode: 'exact' | 'after' | 'before'; raw: string }[] = [];
   const makeupDaysOnly: string[] = [];
 
   if (missedPos >= 0) {
+    const missedWindow = text.slice(Math.max(0, missedPos - 10), Math.min(text.length, missedPos + 10));
+    if (/周末/.test(missedWindow)) missedModeHint = '周末';
+    else if (/周中|周内/.test(missedWindow)) missedModeHint = '周中';
+
     const unpaired = allDays.filter((d) => !d.paired);
     const closest = unpaired.reduce<{ day: string; dist: number } | null>((best, d) => {
       const dist = Math.abs(d.pos - missedPos);
       return (!best || dist < best.dist) ? { day: d.day, dist } : best;
     }, null);
     if (closest && closest.dist < 20) missedDay = closest.day;
-    if (!missedDay && pairs.length > 0) {
-      const cp = pairs.reduce<{ ref: typeof pairs[0]; dist: number } | null>((best, p) => {
+    if (!missedDay && timedRequests.length > 0) {
+      const cp = timedRequests.reduce<{ ref: typeof timedRequests[0]; dist: number } | null>((best, p) => {
         const dist = Math.abs(p.pos - missedPos);
         return (!best || dist < best.dist) ? { ref: p, dist } : best;
       }, null);
       if (cp && cp.dist < 20) {
         missedDay = cp.ref.day;
-        pairs.splice(pairs.indexOf(cp.ref), 1);
+        timedRequests.splice(timedRequests.indexOf(cp.ref), 1);
       }
     }
-    for (const p of pairs) makeupPairs.push({ day: p.day, time: p.time });
+    for (const req of timedRequests) makeupRequests.push({ day: req.day, time: req.time, mode: req.mode, raw: req.raw });
     for (const d of allDays) {
       if (d.paired) continue;
       if (d.day === missedDay && Math.abs(d.pos - missedPos) < 20) continue;
       if (!makeupDaysOnly.includes(d.day)) makeupDaysOnly.push(d.day);
     }
-  } else if (pairs.length >= 2) {
-    missedDay = pairs[0].day;
-    for (let i = 1; i < pairs.length; i++) makeupPairs.push({ day: pairs[i].day, time: pairs[i].time });
-  } else if (pairs.length === 1) {
-    makeupPairs.push({ day: pairs[0].day, time: pairs[0].time });
+  } else if (timedRequests.length >= 2) {
+    missedDay = timedRequests[0].day;
+    for (let i = 1; i < timedRequests.length; i++) {
+      makeupRequests.push({ day: timedRequests[i].day, time: timedRequests[i].time, mode: timedRequests[i].mode, raw: timedRequests[i].raw });
+    }
+  } else if (timedRequests.length === 1) {
+    makeupRequests.push({ day: timedRequests[0].day, time: timedRequests[0].time, mode: timedRequests[0].mode, raw: timedRequests[0].raw });
   } else {
     const unpaired = allDays.filter((d) => !d.paired);
     if (unpaired.length >= 2) {
@@ -270,14 +319,16 @@ export function parseQuickInput(
   result.weekSource = reqWeek?.source || null;
 
   // 7. Select missed lesson
-  if (missedDay && result.classCode) {
-    const sel = selectMissedLesson(result.classCode, missedDay, targetWeekTag, occByClass);
+  if ((missedDay || missedModeHint) && result.classCode) {
+    const sel = selectMissedLesson(result.classCode, missedDay || '', targetWeekTag, occByClass, missedModeHint);
     if (sel.selected) result.missedOccId = sel.selected.id;
     result.selectionError = sel.error;
+    if (!missedDay && sel.selected) missedDay = sel.selected.day;
   }
 
   result.missedDay = missedDay;
-  result.makeupPairs = makeupPairs;
+  result.makeupRequests = makeupRequests;
+  result.makeupPairs = makeupRequests.filter((item) => item.mode === 'exact').map((item) => ({ day: item.day, time: item.time }));
   result.makeupDaysOnly = makeupDaysOnly;
 
   // 8. Feedback
@@ -291,7 +342,7 @@ export function parseQuickInput(
   } else if (result.selectionError) {
     fb.push('缺课内容：' + result.selectionError);
   }
-  if (makeupPairs.length) fb.push('补课时间：' + makeupPairs.map((p) => p.day + ' ' + p.time).join('、'));
+  if (makeupRequests.length) fb.push('补课时间：' + makeupRequests.map((p) => p.raw).join('、'));
   if (makeupDaysOnly.length) fb.push('补课时间：' + makeupDaysOnly.join('、') + '（全部时段）');
   result.feedbackLines = fb;
 

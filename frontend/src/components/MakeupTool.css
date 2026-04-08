@@ -25,6 +25,16 @@
   border-radius: 999px;
 }
 
+.makeup-version-badge {
+  font-size: 12px;
+  color: #0f766e;
+  background: rgba(231, 246, 244, 0.95);
+  border: 1px solid rgba(15, 118, 110, 0.22);
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
 .makeup-section {
   padding: 18px;
   margin-bottom: 16px;
@@ -165,54 +175,104 @@
   color: var(--gray-700);
 }
 
-/* Slot grid — day-grouped */
 .makeup-slot-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 320px;
-  overflow-y: auto;
-  padding: 8px;
+  max-height: 360px;
+  overflow: auto;
+  padding: 0;
   border: 1px solid var(--gray-200);
   border-radius: var(--radius-sm);
   background: #fff;
 }
 
-.makeup-slot-day-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  align-items: center;
+.makeup-slot-matrix {
+  display: grid;
+  grid-template-columns: 84px repeat(7, minmax(82px, 1fr));
+  min-width: 740px;
 }
 
-.makeup-slot-day-label {
-  font-size: 12px;
-  font-weight: 600;
+.makeup-slot-corner,
+.makeup-slot-day-head,
+.makeup-slot-time-head,
+.makeup-slot-cell {
+  min-height: 56px;
+  border-right: 1px solid rgba(221, 217, 208, 0.7);
+  border-bottom: 1px solid rgba(221, 217, 208, 0.7);
+}
+
+.makeup-slot-corner,
+.makeup-slot-day-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fbf7ef;
+}
+
+.makeup-slot-corner {
+  left: 0;
+  z-index: 3;
+}
+
+.makeup-slot-time-head {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 6px;
+  background: #fffaf2;
+  color: #6f4c18;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.makeup-slot-day-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 6px;
   color: var(--gray-600);
-  min-width: 36px;
-  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.makeup-slot-chip {
+.makeup-slot-cell {
   display: flex;
   align-items: center;
+  justify-content: center;
+  padding: 6px;
+  background: #fffdfb;
+}
+
+.makeup-slot-cell.empty {
+  background: linear-gradient(135deg, rgba(221, 217, 208, 0.08), rgba(221, 217, 208, 0.02));
+}
+
+.makeup-slot-toggle {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 8px 10px;
+  padding: 8px 6px;
   border: 1px solid var(--gray-200);
   border-radius: 10px;
   cursor: pointer;
   font-size: 13px;
-  background: #fffdfb;
+  font-weight: 600;
+  background: #fff;
+  color: var(--gray-600);
   transition: border-color 0.15s, background 0.15s;
 }
 
-.makeup-slot-chip.selected {
+.makeup-slot-toggle.selected {
   background: #e7f6f4;
   border-color: rgba(15, 118, 110, 0.25);
   color: #0f766e;
 }
 
-.makeup-slot-chip input {
+.makeup-slot-toggle input {
   width: 14px;
   height: 14px;
   margin: 0;
@@ -451,18 +511,7 @@
 
   /* Slot grid */
   .makeup-slot-grid {
-    max-height: 240px;
-    gap: 6px;
-    padding: 6px;
-  }
-
-  .makeup-slot-day-group {
-    gap: 3px;
-  }
-
-  .makeup-slot-chip {
-    padding: 10px 12px;
-    font-size: 14px;
+    max-height: 420px;
   }
 
   /* Candidates */

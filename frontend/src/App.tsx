@@ -19,6 +19,15 @@ function ScreenLoading() {
   return <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>加载中...</div>;
 }
 
+function warmFeatureModules() {
+  return Promise.all([
+    import('./components/ClassRosterApp'),
+    import('./components/DistributionFlow'),
+    import('./components/DailyReportApp'),
+    import('./components/OverviewApp'),
+  ]);
+}
+
 export default function App() {
   const [screen, setScreen] = useState<AppScreen>('login');
   const [teacherName, setTeacherName] = useState('');
@@ -54,25 +63,29 @@ export default function App() {
   useEffect(() => { persist(); }, [persist]);
 
   useEffect(() => {
-    if (screen !== 'hub' || !selectedClass) {
+    if (classes.length === 0) {
       return;
     }
 
-    void Promise.all([
-      import('./components/ClassRosterApp'),
-      import('./components/DistributionFlow'),
-      import('./components/DailyReportApp'),
-      import('./components/OverviewApp'),
-    ]);
+    void warmFeatureModules();
 
-    const timer = window.setTimeout(() => {
+    const scheduleWarmup = () => {
       void import('xlsx');
-    }, 900);
+    };
+
+    if ('requestIdleCallback' in window) {
+      const idleId = window.requestIdleCallback(scheduleWarmup, { timeout: 1200 });
+      return () => {
+        window.cancelIdleCallback(idleId);
+      };
+    }
+
+    const timer = globalThis.setTimeout(scheduleWarmup, 900);
 
     return () => {
-      window.clearTimeout(timer);
+      globalThis.clearTimeout(timer);
     };
-  }, [screen, selectedClass]);
+  }, [classes.length]);
 
   function handleLogin(name: string, classList: ClassInfo[]) {
     setTeacherName(name);
