@@ -44,7 +44,7 @@ export function createMediaItem(name = ''): MediaItem {
     src: '',
     name,
     caption: '',
-    displayWidth: 140,
+    displayWidth: 160,
     annotations: [],
   };
 }
@@ -188,7 +188,7 @@ function cloneCustomBlock(block: CustomBlock): CustomBlock {
     },
     media: block.media.map((item) => ({
       ...item,
-      displayWidth: item.displayWidth ?? 140,
+      displayWidth: item.displayWidth ?? 160,
       annotations: item.annotations.map((annotation) => ({ ...annotation })),
     })),
   };

@@ -66,7 +66,7 @@ async function filesToMediaItems(files: File[]): Promise<MediaItem[]> {
       src,
       name: file.name,
       caption: '',
-      displayWidth: 140,
+      displayWidth: 160,
       annotations: [],
     });
   }
@@ -164,6 +164,11 @@ function MediaEditor({
   items: MediaItem[];
   onChange: (items: MediaItem[]) => void;
 }) {
+  function getEditorPreviewWidth(displayWidth?: number): string {
+    const width = Math.max(320, Math.min(900, Math.round((displayWidth ?? 160) * 4)));
+    return `min(100%, ${width}px)`;
+  }
+
   async function appendFiles(files: File[]) {
     if (files.length === 0) return;
     const uploaded = await filesToMediaItems(files);
@@ -235,7 +240,7 @@ function MediaEditor({
 
       {items.map((item) => (
         <div key={item.id} className="ov-media-card">
-          <div className="ov-media-preview" style={{ width: `${item.displayWidth ?? 100}%` }}>
+          <div className="ov-media-preview" style={{ width: getEditorPreviewWidth(item.displayWidth) }}>
             <img src={item.src} alt={item.name || '上传图片'} />
             {item.annotations.map((annotation) => (
               <div
@@ -266,9 +271,9 @@ function MediaEditor({
               <span>图片宽度</span>
               <input
                 type="range"
-                min={80}
-                max={180}
-                value={item.displayWidth ?? 140}
+                min={100}
+                max={220}
+                value={item.displayWidth ?? 160}
                 onChange={(event) => updateItem(item.id, (current) => ({
                   ...current,
                   displayWidth: Number(event.target.value),
@@ -452,6 +457,11 @@ function shouldShowCustomBlock(block: CustomBlock): boolean {
 }
 
 export default function OverviewApp({ classInfo, onBack }: Props) {
+  function getPaperMediaWidth(displayWidth?: number): string {
+    const width = Math.max(360, Math.min(820, Math.round((displayWidth ?? 160) * 5)));
+    return `min(100%, ${width}px)`;
+  }
+
   const classCode = classInfo.name;
   const [studentNames, setStudentNames] = useState<string[]>(() =>
     sortStudentNames(getResolvedStudents(classCode).map((student) => student.chineseName)),
@@ -1331,7 +1341,7 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
                         {item.media.length > 0 && (
                           <div className="ov-paper-media-grid">
                             {item.media.map((media) => (
-                              <figure key={media.id} className="ov-paper-figure" style={{ width: `${media.displayWidth ?? 100}%` }}>
+                              <figure key={media.id} className="ov-paper-figure" style={{ width: getPaperMediaWidth(media.displayWidth) }}>
                                 <img src={media.src} alt={media.name || item.title || '挑战图片'} />
                                 {media.caption && <figcaption>{media.caption}</figcaption>}
                               </figure>
@@ -1398,7 +1408,7 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
                 {block.mode === 'image' && (
                   <div className="ov-paper-media-grid">
                     {block.media.map((media) => (
-                      <figure key={media.id} className="ov-paper-figure" style={{ width: `${media.displayWidth ?? 100}%` }}>
+                      <figure key={media.id} className="ov-paper-figure" style={{ width: getPaperMediaWidth(media.displayWidth) }}>
                         <img src={media.src} alt={media.name || block.title} />
                         {media.caption && <figcaption>{media.caption}</figcaption>}
                       </figure>
