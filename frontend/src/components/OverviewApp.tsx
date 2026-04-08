@@ -469,8 +469,11 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setStudentNames(sortStudentNames(getResolvedStudents(classCode).map((student) => student.chineseName)));
-  }, [classCode]);
+    const nextNames = sortStudentNames(getResolvedStudents(classCode).map((student) => student.chineseName));
+    setStudentNames(nextNames);
+    const draft = loadDraft(classCode, week);
+    setContent(draft ?? createEmptyContent(classCode, week, { orderedDays, studentNames: nextNames }));
+  }, [classCode, orderedDays, week]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
