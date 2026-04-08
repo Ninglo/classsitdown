@@ -3,6 +3,9 @@ const cors = require('cors');
 const path = require('path');
 const crypto = require('crypto');
 const https = require('https');
+const fs = require('fs/promises');
+const os = require('os');
+const { spawn } = require('child_process');
 const EducationSystemScraper = require('./scraper/scraper');
 
 const app = express();
@@ -12,7 +15,7 @@ const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const sessions = new Map();
 
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: '20mb' }));
 
 process.on('unhandledRejection', (reason) => {
   console.error('❌ unhandledRejection:', reason);
@@ -228,6 +231,104 @@ function callAnthropicAPI(messages, systemPrompt) {
   });
 }
 
+function callCodexFallback(messages, systemPrompt) {
+  return new Promise((resolve, reject) => {
+    const prompt = [
+      systemPrompt,
+      '',
+      '请严格只输出最终日报正文，不要添加解释、前言、后记或代码块围栏。',
+      '',
+      ...messages.map((message) => {
+        const role = message.role === 'user' ? '用户' : '助手';
+        return `${role}：${message.content}`;
+      }),
+    ].join('\n');
+
+    const child = spawn(
+      'codex',
+      [
+        'exec',
+        '--json',
+        '--skip-git-repo-check',
+        '--dangerously-bypass-approvals-and-sandbox',
+        '-m',
+        'gpt-5.4-mini',
+        prompt,
+      ],
+      {
+        cwd: path.join(__dirname, '..'),
+        env: process.env,
+      }
+    );
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGTERM');
+      reject(new Error('日报生成超时，请稍后再试'));
+    }, 120000);
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || `日报生成失败（退出码 ${code}）`));
+        return;
+      }
+
+      const lines = stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      for (const line of lines) {
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed?.type === 'item.completed' && parsed?.item?.type === 'agent_message') {
+            const text = String(parsed.item.text || '').trim();
+            if (text) {
+              resolve(text);
+              return;
+            }
+          }
+        } catch {
+          // ignore non-JSON lines
+        }
+      }
+
+      reject(new Error('日报生成失败，未获取到可用内容'));
+    });
+  });
+}
+
+function generateDailyReport(messages, systemPrompt) {
+  if (process.env.ANTHROPIC_API_KEY) {
+    return callAnthropicAPI(messages, systemPrompt);
+  }
+  return callCodexFallback(messages, systemPrompt);
+}
+
 function requestJson(url) {
   return new Promise((resolve, reject) => {
     const req = https.get(
@@ -289,31 +390,304 @@ async function translateWordToChinese(text) {
   return '';
 }
 
+function buildDailyReportPrompt(mode, customPrompt) {
+  const basePrompt = `你是一位英语培训机构的班主任助手，负责根据课程数据生成班级日报。
+输出格式为 Markdown，使用中文。
+语气积极、专业，避免批评性语言。`;
+
+  if (mode === 'detailed') {
+    return `${basePrompt}
+
+请生成详细版班级日报，内容尽量完整、信息密度更高。
+优先包含以下内容（根据数据实际情况灵活调整）：
+1. 本次课程整体情况与课堂状态
+2. 出勤、完成度、积分或表现亮点
+3. 每个重点学生的具体表现或进步点
+4. 需要后续关注的情况
+5. 本课重点与老师建议`;
+  }
+
+  if (mode === 'custom') {
+    return `${basePrompt}
+
+请按照用户给出的自定义要求生成日报。
+如果用户要求与原始数据冲突，以原始数据为准。
+用户的自定义要求如下：
+${String(customPrompt || '').trim()}`;
+  }
+
+  return `${basePrompt}
+
+请生成常规版班级日报，简洁清晰，适合直接发送。
+优先包含以下内容（根据数据实际情况灵活调整）：
+1. 本次课程总体情况
+2. 积分或表现亮点
+3. 需要关注的情况
+  4. 老师寄语或本课重点`;
+}
+
+function parseMarkdownTableRows(text) {
+  const lines = String(text || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => line.startsWith('|') && line.endsWith('|'));
+
+  return lines
+    .filter((line) => !/^\|\s*(---\s*\|)+\s*$/.test(line))
+    .map((line) => line
+      .slice(1, -1)
+      .split('|')
+      .map((cell) => String(cell || '').trim()));
+}
+
+function parseCompletedValue(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  if (['进行中', '未完成', '否', '0', '×'].includes(text)) return false;
+  if (['已完成', '完成', '是', '1', '√'].includes(text)) return true;
+  return null;
+}
+
+function parseScoreValue(value) {
+  const text = String(value || '').trim().replace('%', '');
+  if (!text) return null;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function summarizeTablesForReport(tables, fallbackClassCode) {
+  const studentMap = new Map();
+
+  for (const table of tables) {
+    const name = String(table?.name || '');
+    const rows = parseMarkdownTableRows(table?.text);
+    if (rows.length < 4) continue;
+
+    const row1 = rows[1] || [];
+    const row2 = rows[2] || [];
+    const resourceBlocks = [];
+    let currentBlock = null;
+
+    for (let ci = 0; ci < row1.length; ci += 1) {
+      const cell = String(row1[ci] || '').trim();
+      if (cell.includes('[')) {
+        if (currentBlock) {
+          currentBlock.endCol = ci - 1;
+          resourceBlocks.push(currentBlock);
+        }
+        currentBlock = { startCol: ci, endCol: ci, subCols: [] };
+      }
+      if (currentBlock && row2[ci] !== undefined) {
+        currentBlock.subCols.push(String(row2[ci] || '').trim());
+      }
+    }
+    if (currentBlock) {
+      currentBlock.endCol = row1.length - 1;
+      resourceBlocks.push(currentBlock);
+    }
+
+    for (let ri = 3; ri < rows.length; ri += 1) {
+      const row = rows[ri] || [];
+      const studentId = String(row[1] || '').trim();
+      if (!studentId || studentId === '学号') continue;
+
+      const chineseName = String(row[2] || '').trim();
+      const englishName = String(row[3] || '').trim();
+      const studentName = englishName || chineseName || studentId;
+      const existing = studentMap.get(studentName) || {
+        name: studentName,
+        completedTasks: 0,
+        totalTrackedTasks: 0,
+        scoreSum: 0,
+        scoreCount: 0,
+      };
+
+      for (const block of resourceBlocks) {
+        let colIdx = block.startCol;
+        for (const subCol of block.subCols) {
+          const rawVal = row[colIdx] ?? '';
+          if (subCol.includes('是否完成')) {
+            const completed = parseCompletedValue(rawVal);
+            if (completed !== null) {
+              existing.totalTrackedTasks += 1;
+              if (completed) existing.completedTasks += 1;
+            }
+          }
+          if (
+            subCol.includes('分数') ||
+            subCol.includes('平均分') ||
+            subCol.includes('正确率')
+          ) {
+            const score = parseScoreValue(rawVal);
+            if (score !== null) {
+              existing.scoreSum += score;
+              existing.scoreCount += 1;
+            }
+          }
+          colIdx += 1;
+        }
+      }
+
+      studentMap.set(studentName, existing);
+    }
+
+    if (rows.length > 1 && studentMap.size === 0) {
+      for (let ri = 1; ri < rows.length; ri += 1) {
+        const row = rows[ri] || [];
+        const studentName = String(row[3] || row[2] || row[1] || row[0] || '').trim();
+        if (!studentName) continue;
+        if (!studentMap.has(studentName)) {
+          studentMap.set(studentName, {
+            name: studentName,
+            completedTasks: 0,
+            totalTrackedTasks: 0,
+            scoreSum: 0,
+            scoreCount: 0,
+          });
+        }
+      }
+    }
+
+    const classMatch = name.match(/([A-Z]\d{2,4})/i);
+    if (!fallbackClassCode && classMatch) fallbackClassCode = classMatch[1].toUpperCase();
+  }
+
+  return {
+    classCode: fallbackClassCode,
+    students: Array.from(studentMap.values()),
+  };
+}
+
+function averageScore(student) {
+  return student.scoreCount > 0 ? student.scoreSum / student.scoreCount : null;
+}
+
+function buildFastDailyReport({ classCode, tables, note, mode, customPrompt }) {
+  const summary = summarizeTablesForReport(tables, classCode);
+  const studentCount = summary.students.length;
+  const trackedStudents = summary.students.filter((student) => student.totalTrackedTasks > 0);
+  const overallCompletion = trackedStudents.length > 0
+    ? trackedStudents.reduce((sum, student) => sum + (student.completedTasks / Math.max(student.totalTrackedTasks, 1)), 0) / trackedStudents.length * 100
+    : null;
+  const scoredStudents = summary.students.filter((student) => student.scoreCount > 0);
+  const overallScore = scoredStudents.length > 0
+    ? scoredStudents.reduce((sum, student) => sum + (averageScore(student) || 0), 0) / scoredStudents.length
+    : null;
+
+  const ranked = [...summary.students].sort((a, b) => {
+    const aCompletion = a.totalTrackedTasks > 0 ? a.completedTasks / a.totalTrackedTasks : 0;
+    const bCompletion = b.totalTrackedTasks > 0 ? b.completedTasks / b.totalTrackedTasks : 0;
+    const aScore = averageScore(a) || 0;
+    const bScore = averageScore(b) || 0;
+    return (bCompletion * 100 + bScore) - (aCompletion * 100 + aScore);
+  });
+
+  const topStudents = ranked.slice(0, Math.min(3, ranked.length));
+  const attentionStudents = ranked
+    .filter((student) => student.totalTrackedTasks > 0 && student.completedTasks / Math.max(student.totalTrackedTasks, 1) < 0.7)
+    .slice(0, 2);
+
+  const focusLine = mode === 'custom' && String(customPrompt || '').trim()
+    ? `本次重点：${String(customPrompt).trim()}`
+    : '';
+  const noteBlock = String(note || '').trim()
+    ? `\n## 补充说明\n${String(note).trim()}`
+    : '';
+  const highlightLines = topStudents.length > 0
+    ? topStudents.map((student) => {
+        const completion = student.totalTrackedTasks > 0
+          ? `${student.completedTasks}/${student.totalTrackedTasks}`
+          : '已导入学习数据';
+        const score = averageScore(student);
+        return `- ${student.name}：完成情况 ${completion}${score !== null ? `，表现分约 ${Math.round(score)}` : ''}`;
+      }).join('\n')
+    : '- 本次已成功导入学生数据。';
+  const attentionLines = attentionStudents.length > 0
+    ? attentionStudents.map((student) => `- ${student.name}：后续可重点关注完成进度和课堂跟进。`).join('\n')
+    : '- 暂无明显异常，整体状态稳定。';
+
+  if (mode === 'detailed' || /详细|展开|具体/.test(String(customPrompt || ''))) {
+    const studentBlocks = topStudents.map((student) => {
+      const completionRate = student.totalTrackedTasks > 0
+        ? Math.round((student.completedTasks / student.totalTrackedTasks) * 100)
+        : null;
+      const score = averageScore(student);
+      return `### ${student.name}
+- 完成度：${student.totalTrackedTasks > 0 ? `${student.completedTasks}/${student.totalTrackedTasks}（${completionRate}%）` : '已导入数据'}
+${score !== null ? `- 表现分：约 ${Math.round(score)}` : '- 表现分：暂无可直接量化分数'}
+- 整体表现：本次课堂状态稳定，建议继续保持当前节奏。`;
+    }).join('\n\n');
+
+    return `# ${summary.classCode || classCode} 班级日报详细版
+
+${focusLine ? `${focusLine}\n\n` : ''}## 整体情况
+- 学生人数：${studentCount}
+${overallCompletion !== null ? `- 整体完成度：${Math.round(overallCompletion)}%` : '- 整体完成度：暂无可直接量化数据'}
+${overallScore !== null ? `- 整体表现分：约 ${Math.round(overallScore)}` : '- 整体表现分：暂无可直接量化分数'}
+- 整体判断：课堂状态总体稳定，数据已成功汇总。
+
+## 亮点学生
+${highlightLines}
+
+## 重点学生情况
+${studentBlocks || '- 本次暂无可展开的重点学生明细。'}
+
+## 需要关注
+${attentionLines}${noteBlock}`;
+  }
+
+  return `# ${summary.classCode || classCode} 班级日报
+
+${focusLine ? `${focusLine}\n\n` : ''}## 本次课程总体情况
+- 学生人数：${studentCount}
+${overallCompletion !== null ? `- 整体完成度：${Math.round(overallCompletion)}%` : '- 已成功读取本次学习数据'}
+${overallScore !== null ? `- 整体表现分：约 ${Math.round(overallScore)}` : '- 整体课堂状态稳定，可直接用于日报整理'}
+
+## 表现亮点
+${highlightLines}
+
+## 需要关注
+${attentionLines}${noteBlock}`;
+}
+
 app.post('/api/ai/daily-report', async (req, res) => {
   try {
-    const { classCode, tables, note } = req.body || {};
+    const { classCode, tables, note, mode = 'standard', customPrompt = '' } = req.body || {};
     if (!classCode) return res.status(400).json({ error: '缺少班级代码' });
     if (!Array.isArray(tables) || tables.length === 0) {
       return res.status(400).json({ error: '请至少上传一个数据表格' });
+    }
+    if (mode === 'custom' && !String(customPrompt).trim()) {
+      return res.status(400).json({ error: '缺少自定义提示' });
+    }
+
+    const fastReport = buildFastDailyReport({
+      classCode,
+      tables,
+      note,
+      mode,
+      customPrompt,
+    });
+    if (fastReport) {
+      return res.json({ status: 'success', report: fastReport, source: 'local-fast' });
     }
 
     const tableText = tables
       .map((t) => `【${t.name}】\n${t.text}`)
       .join('\n\n');
 
-    const systemPrompt = `你是一位英语培训机构的班主任助手，负责根据课程数据生成班级日报。
-日报应简洁、清晰，适合发给家长或内部使用。
-输出格式为 Markdown，使用中文。
-日报包含以下内容（根据数据实际情况灵活调整）：
-1. 本次课程总体情况（出席率、上课状态）
-2. 积分/表现亮点（表现好的学生）
-3. 需要关注的情况（如有缺席、积分异常等）
-4. 老师寄语或本课重点
-语气积极、专业，避免批评性语言。`;
+    const modeLabel = mode === 'detailed' ? '详细版' : mode === 'custom' ? '自定义' : '常规版';
+    const systemPrompt = buildDailyReportPrompt(mode, customPrompt);
 
-    const userContent = `班级：${classCode}\n\n课程数据如下：\n\n${tableText}${note ? `\n\n老师补充说明：${note}` : ''}`;
+    const userContent = `班级：${classCode}
+模式：${modeLabel}
 
-    const report = await callAnthropicAPI(
+课程数据如下：
+
+${tableText}${note ? `\n\n老师补充说明：${note}` : ''}${mode === 'custom' ? `\n\n自定义要求：${String(customPrompt).trim()}` : ''}`;
+
+    const report = await generateDailyReport(
       [{ role: 'user', content: userContent }],
       systemPrompt
     );
@@ -322,6 +696,211 @@ app.post('/api/ai/daily-report', async (req, res) => {
   } catch (error) {
     console.error('❌ 日报生成失败:', error.message);
     res.status(500).json({ error: error.message });
+  }
+});
+
+function decodeBase64File(payload, label) {
+  const name = String(payload?.name || '').trim();
+  const content = String(payload?.content || '').trim();
+  if (!name || !content) {
+    throw new Error(`${label}文件缺失`);
+  }
+  return {
+    name,
+    buffer: Buffer.from(content, 'base64'),
+  };
+}
+
+function createEmptyCheckinWorkbook(filePath) {
+  return new Promise((resolve, reject) => {
+    const script = `
+import sys
+from openpyxl import Workbook
+
+target = sys.argv[1]
+wb = Workbook()
+ws = wb.active
+ws.title = "data"
+headers = ["学号", "姓名", "周一", "周二", "周三", "周四", "周五", "周六", "周日", "备注", "总打卡", "正常打卡", "补卡"]
+ws.append(headers)
+wb.save(target)
+`;
+
+    const child = spawn('python3', ['-c', script, filePath], { env: process.env });
+    let stderr = '';
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || '空白打卡表创建失败'));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function stripCheckinColumns(workbookPath, reportMode) {
+  return new Promise((resolve, reject) => {
+    const script = `
+import sys
+from openpyxl import load_workbook
+
+path = sys.argv[1]
+mode = sys.argv[2]
+wb = load_workbook(path)
+
+if mode == "detail":
+    ws = wb[wb.sheetnames[0]]
+    ws.delete_cols(3, 1)
+else:
+    ws_public = wb["完成公示"]
+    ws_public.delete_cols(3, 1)
+
+    ws_analysis = wb["质量分析"]
+    header_row = 1
+    target_col = None
+    for col in range(1, ws_analysis.max_column + 1):
+        value = ws_analysis.cell(header_row, col).value
+        if str(value).strip() == "打卡":
+            target_col = col
+            break
+    if target_col:
+        ws_analysis.delete_cols(target_col, 1)
+
+wb.save(path)
+`;
+
+    const child = spawn('python3', ['-c', script, workbookPath, reportMode], { env: process.env });
+    let stderr = '';
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || '移除打卡列失败'));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
+function runPythonReport(scriptPath, args, cwd) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('python3', [scriptPath, ...args], { cwd, env: process.env });
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGTERM');
+      reject(new Error('日报生成超时，请稍后再试'));
+    }, 120000);
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || `日报生成失败（退出码 ${code}）`));
+        return;
+      }
+
+      const outputPath = stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .at(-1);
+
+      if (!outputPath) {
+        reject(new Error('日报生成失败，未拿到输出文件'));
+        return;
+      }
+
+      resolve(outputPath);
+    });
+  });
+}
+
+app.post('/api/reports/class-daily-report', async (req, res) => {
+  let tempDir = '';
+
+  try {
+    const {
+      className = '',
+      reportMode = 'standard',
+      studentFile,
+      checkinFile,
+    } = req.body || {};
+
+    const normalizedMode = reportMode === 'detail' ? 'detail' : 'standard';
+    const student = decodeBase64File(studentFile, '学生个人数据');
+
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'class-daily-report-'));
+    const studentPath = path.join(tempDir, student.name);
+    const checkinPath = path.join(tempDir, String(checkinFile?.name || 'optional-checkin.xlsx'));
+    await fs.writeFile(studentPath, student.buffer);
+    const hasCheckinFile = !!(checkinFile?.name && checkinFile?.content);
+    if (hasCheckinFile) {
+      const checkin = decodeBase64File(checkinFile, '打卡情况');
+      await fs.writeFile(checkinPath, checkin.buffer);
+    } else {
+      await createEmptyCheckinWorkbook(checkinPath);
+    }
+
+    const scriptPath = normalizedMode === 'detail'
+      ? path.resolve(os.homedir(), '.remotelab/instances/trial23/scripts/class_daily_report_detail.py')
+      : path.resolve(os.homedir(), '.remotelab/instances/trial23/scripts/class_daily_report.py');
+
+    const args = [checkinPath, studentPath];
+    const trimmedClassName = String(className || '').trim();
+    if (trimmedClassName) {
+      args.push(trimmedClassName);
+    }
+
+    const outputPath = await runPythonReport(scriptPath, args, tempDir);
+    if (!hasCheckinFile) {
+      await stripCheckinColumns(outputPath, normalizedMode);
+    }
+    const fileBuffer = await fs.readFile(outputPath);
+    const downloadName = path.basename(outputPath);
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(downloadName)}`);
+    res.send(fileBuffer);
+  } catch (error) {
+    console.error('❌ 班级日报文件生成失败:', error.message);
+    res.status(500).json({ error: error.message || '班级日报生成失败' });
+  } finally {
+    if (tempDir) {
+      fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
   }
 });
 

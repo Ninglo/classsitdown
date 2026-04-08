@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ClassInfo, WelcomeView, DayOfWeek, AppScreen } from '../types';
-import { loadMakeupData } from '../utils/makeupData';
+import { hasStoredMakeupData } from '../utils/makeupStorage';
 import { getCurrentWeek, getWeekRange, formatDateShort } from '../utils/weekNumber';
 import { ALL_DAYS, getClassDays, sortClassesBySchedule, getResolvedSchedule, getClassTimeOnDay } from '../utils/classSchedule';
 import { getStudentCount } from '../utils/classProfiles';
@@ -23,9 +23,6 @@ export default function Welcome({ teacherName, classes, onSelectClass, onLogout,
   const [showScheduleEditor, setShowScheduleEditor] = useState(false);
   const [scheduleVersion, setScheduleVersion] = useState(0);
   const [view, setView] = useState<WelcomeView>('byClass');
-
-  const firstName = teacherName.replace(/^(ms\.?|mr\.?|mrs\.?)/i, '').trim().split(/[\s_]/)[0];
-  const displayName = firstName.charAt(0).toUpperCase() + firstName.slice(1);
 
   function handleManualStart() {
     onSelectClass({ id: 'manual', name: '手动输入' });
@@ -63,8 +60,8 @@ export default function Welcome({ teacherName, classes, onSelectClass, onLogout,
       <header className="welcome-header">
         <div className="welcome-greeting">
           <div className="greeting-text">
-            <h1>Welcome, {displayName}</h1>
-            <p className="slogan">Super Amber is here! · I will help you</p>
+            <h1>Super Amber is here!</h1>
+            <p className="slogan">C&amp;F School · 班级事务助手</p>
           </div>
         </div>
         <div className="welcome-header-right">
@@ -79,23 +76,23 @@ export default function Welcome({ teacherName, classes, onSelectClass, onLogout,
       </header>
 
       <div className="welcome-body">
+        <div className="welcome-intro card">
+          <p>
+            每天花在整理名单、核对英文名、调整座位、补课堂记录、拼概览素材上的时间，
+            本可以用来做更重要的事。把这些重复的班级事务收进一套系统里，
+            琐事收纳，快捷转化，不用再在表格和聊天记录里来回翻。
+          </p>
+        </div>
+
         <div className="welcome-toolbox-area">
           <div className="toolbox-section">
             <div className="toolbox-title">工具箱</div>
             <div className="toolbox-grid">
-              <button className="toolbox-card" onClick={() => onNavigate('roster')}>
-                <span className="toolbox-card-icon">🧾</span>
-                <div className="toolbox-card-body">
-                  <strong>班级准确信息核对</strong>
-                  <p>批量导入并核对学号 / 中文名 / 英文名</p>
-                </div>
-                <span className="toolbox-card-arrow">→</span>
-              </button>
               <button className="toolbox-card" onClick={() => onNavigate('makeup')}>
                 <span className="toolbox-card-icon">💊</span>
                 <div className="toolbox-card-body">
                   <strong>补课助手</strong>
-                  <p>{loadMakeupData() ? '数据已导入' : '点击进入'}</p>
+                  <p>{hasStoredMakeupData() ? '数据已导入' : '点击进入'}</p>
                 </div>
                 <span className="toolbox-card-arrow">→</span>
               </button>
@@ -240,20 +237,19 @@ export default function Welcome({ teacherName, classes, onSelectClass, onLogout,
 
         <div className="batch-import-panel card">
           <div className="batch-import-copy">
-            <div className="batch-import-kicker">批量导入</div>
-            <h2>先导准确信息，再导座位变化</h2>
+            <div className="batch-import-kicker">核心使用建议</div>
+            <h2>建议首次使用前先批量导入名单</h2>
             <p>
-              当前推荐顺序是：先把这个班的学号、中文名、英文名导成硬数据，
-              再去导座位表图片或座位变化。座位表里识别出的名单更适合当成动态版本，
-              不适合直接替代正式名单底座。
+              把学号、中文名、英文名一次性整理好。后续查班级、做概览、发公示、
+              补课堂记录都会更省事。
             </p>
           </div>
           <div className="batch-import-actions">
             <button className="btn btn-primary btn-sm" onClick={() => onNavigate('roster')}>
-              先导正式名单
+              批量导入名单
             </button>
             <button className="btn btn-ghost btn-sm" onClick={() => openGuide('batch-import')}>
-              再看座位表导入
+              查看入口关系
             </button>
           </div>
         </div>

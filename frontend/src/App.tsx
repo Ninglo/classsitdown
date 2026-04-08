@@ -1,17 +1,23 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense, startTransition } from 'react';
 import Login from './components/Login';
 import Welcome from './components/Welcome';
 import ClassHub from './components/ClassHub';
-import ClassRosterApp from './components/ClassRosterApp';
-import DistributionFlow from './components/DistributionFlow';
 import NewestSeatingFrame from './components/NewestSeatingFrame';
-import MakeupTool from './components/MakeupTool';
-import DailyReportApp from './components/DailyReportApp';
 import ReLoginModal from './components/ReLoginModal';
 
 const OverviewApp = lazy(() => import('./components/OverviewApp'));
+const ClassRosterApp = lazy(() => import('./components/ClassRosterApp'));
+const DistributionFlow = lazy(() => import('./components/DistributionFlow'));
+const MakeupTool = lazy(() => import('./components/MakeupTool'));
+const DailyReportApp = lazy(() => import('./components/DailyReportApp'));
 import type { AppScreen, ClassInfo } from './types';
 import { saveAppState, loadAppState } from './utils/appPersistence';
+
+const CLASS_CONTEXT_SCREENS: AppScreen[] = ['flow', 'seating', 'overview', 'daily-report', 'roster'];
+
+function ScreenLoading() {
+  return <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>加载中...</div>;
+}
 
 export default function App() {
   const [screen, setScreen] = useState<AppScreen>('login');
@@ -47,35 +53,68 @@ export default function App() {
 
   useEffect(() => { persist(); }, [persist]);
 
+  useEffect(() => {
+    if (screen !== 'hub' || !selectedClass) {
+      return;
+    }
+
+    void Promise.all([
+      import('./components/ClassRosterApp'),
+      import('./components/DistributionFlow'),
+      import('./components/DailyReportApp'),
+      import('./components/OverviewApp'),
+    ]);
+
+    const timer = window.setTimeout(() => {
+      void import('xlsx');
+    }, 900);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [screen, selectedClass]);
+
   function handleLogin(name: string, classList: ClassInfo[]) {
     setTeacherName(name);
     setClasses(classList);
-    setScreen('welcome');
+    startTransition(() => {
+      setScreen('welcome');
+    });
   }
 
   function handleSelectClass(cls: ClassInfo) {
-    setSelectedClass(cls);
-    setScreen('hub');
+    startTransition(() => {
+      setSelectedClass(cls);
+      setScreen('hub');
+    });
   }
 
   function handleNavigate(target: AppScreen) {
-    setScreen(target);
+    startTransition(() => {
+      setScreen(target);
+    });
   }
 
   function handleBackToHub() {
-    setScreen('hub');
+    startTransition(() => {
+      setScreen('hub');
+    });
   }
 
   function handleBackToWelcome() {
-    setSelectedClass(null);
-    setScreen('welcome');
+    startTransition(() => {
+      setSelectedClass(null);
+      setScreen('welcome');
+    });
   }
 
   function handleLogout() {
-    setTeacherName('');
-    setClasses([]);
-    setSelectedClass(null);
-    setScreen('login');
+    startTransition(() => {
+      setTeacherName('');
+      setClasses([]);
+      setSelectedClass(null);
+      setScreen('login');
+    });
   }
 
   function handleSessionExpired() {
@@ -94,7 +133,23 @@ export default function App() {
     }
   }
 
+  function handleSwitchClass(nextClassName: string) {
+    const nextClass = classes.find((item) => item.name === nextClassName);
+    if (!nextClass || nextClass.name === selectedClass?.name) {
+      return;
+    }
+
+    startTransition(() => {
+      setSelectedClass(nextClass);
+    });
+  }
+
   if (!restored) return null;
+
+  const showClassContextBar =
+    Boolean(selectedClass)
+    && selectedClass?.id !== 'manual'
+    && CLASS_CONTEXT_SCREENS.includes(screen);
 
   return (
     <>
@@ -111,11 +166,14 @@ export default function App() {
         />
       )}
       {screen === 'roster' && (
-        <ClassRosterApp
-          classInfo={selectedClass}
-          knownClasses={classes}
-          onBack={selectedClass ? handleBackToHub : handleBackToWelcome}
-        />
+        <Suspense fallback={<ScreenLoading />}>
+          <ClassRosterApp
+            key={`roster:${selectedClass?.name ?? 'none'}`}
+            classInfo={selectedClass}
+            knownClasses={classes}
+            onBack={selectedClass ? handleBackToHub : handleBackToWelcome}
+          />
+        </Suspense>
       )}
       {screen === 'hub' && selectedClass && (
         <ClassHub
@@ -125,11 +183,14 @@ export default function App() {
         />
       )}
       {screen === 'flow' && selectedClass && (
-        <DistributionFlow
-          classInfo={selectedClass}
-          onBack={handleBackToHub}
-          onSessionExpired={handleSessionExpired}
-        />
+        <Suspense fallback={<ScreenLoading />}>
+          <DistributionFlow
+            key={`flow:${selectedClass.name}`}
+            classInfo={selectedClass}
+            onBack={handleBackToHub}
+            onSessionExpired={handleSessionExpired}
+          />
+        </Suspense>
       )}
       {selectedClass && (screen === 'hub' || screen === 'seating') && (
         <NewestSeatingFrame
@@ -139,18 +200,42 @@ export default function App() {
         />
       )}
       {screen === 'overview' && selectedClass && (
-        <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: '#999' }}>加载中...</div>}>
+        <Suspense fallback={<ScreenLoading />}>
           <OverviewApp
+            key={`overview:${selectedClass.name}`}
             classInfo={selectedClass}
             onBack={handleBackToHub}
           />
         </Suspense>
       )}
       {screen === 'makeup' && (
-        <MakeupTool onBack={handleBackToWelcome} />
+        <Suspense fallback={<ScreenLoading />}>
+          <MakeupTool onBack={handleBackToWelcome} />
+        </Suspense>
       )}
       {screen === 'daily-report' && selectedClass && (
-        <DailyReportApp classInfo={selectedClass} onBack={handleBackToHub} />
+        <Suspense fallback={<ScreenLoading />}>
+          <DailyReportApp
+            key={`daily-report:${selectedClass.name}`}
+            classInfo={selectedClass}
+            onBack={handleBackToHub}
+          />
+        </Suspense>
+      )}
+      {showClassContextBar && (
+        <div className="screen-class-switcher">
+          <span className="screen-class-switcher-label">班级</span>
+          <select
+            value={selectedClass?.name || ''}
+            onChange={(event) => handleSwitchClass(event.target.value)}
+          >
+            {classes.map((item) => (
+              <option key={item.id} value={item.name}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </div>
       )}
       {showReLogin && (
         <ReLoginModal

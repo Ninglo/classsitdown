@@ -279,8 +279,8 @@ export default function ClassRosterApp({ classInfo, knownClasses, onBack }: Prop
       <div className="roster-topbar">
         <button className="back-btn" onClick={onBack}>← 返回</button>
         <div className="roster-title">
-          <strong>班级准确信息核对</strong>
-          <span>统一管理学号 / 中文名 / 英文名，作为全站硬数据底座</span>
+          <strong>批量导入名单</strong>
+          <span>把学号 / 中文名 / 英文名整理在一起，后面查班级和继续处理都会更方便</span>
         </div>
       </div>
 

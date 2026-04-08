@@ -18,11 +18,11 @@ interface FeatureItem {
 }
 
 const FEATURES: FeatureItem[] = [
-  { icon: '🧾', title: '准确信息',     desc: '先导入学号、中文名、英文名，作为这个班的硬数据底座', target: 'roster' },
   { icon: '🪑', title: '座位表',       desc: '查看座位、名单、上课时间；图片识别后先在这里确认', target: 'seating' },
   { icon: '🏆', title: 'MP 积分发放',  desc: 'MP 计算、导出图片 & Excel',            target: 'flow' },
   { icon: '📋', title: '课程概览',     desc: '简报制作，模块拼接导出',                target: 'overview' },
-  { icon: '📗', title: '班级日报',     desc: '上传 Excel 数据，AI 自动生成日报',       target: 'daily-report' },
+  { icon: '📗', title: '班级日报',     desc: '上传两份 Excel，直接生成公示表或明细版',   target: 'daily-report' },
+  { icon: '🧾', title: '批量导名单',   desc: '把学号、中文名、英文名一次性整理好，后面会更省事', target: 'roster' },
 ];
 
 export default function ClassHub({ classInfo, onNavigate, onBack }: Props) {

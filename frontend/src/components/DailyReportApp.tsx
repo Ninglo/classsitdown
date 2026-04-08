@@ -1,147 +1,157 @@
-import { useState, useRef } from 'react';
-import * as XLSX from 'xlsx';
+import { useMemo, useRef, useState } from 'react';
 import type { ClassInfo } from '../types';
 import './DailyReportApp.css';
-
-interface TableData {
-  name: string;
-  text: string;
-}
 
 interface Props {
   classInfo: ClassInfo;
   onBack: () => void;
 }
 
-function xlsxToMarkdown(wb: XLSX.WorkBook, fileName: string): TableData[] {
-  return wb.SheetNames.map((sheetName) => {
-    const ws = wb.Sheets[sheetName];
-    const rows: (string | number | null)[][] = XLSX.utils.sheet_to_json(ws, {
-      header: 1,
-      defval: null,
-    }) as (string | number | null)[][];
+type ReportMode = 'standard' | 'detail';
+type UploadKind = 'student' | 'checkin';
 
-    // Remove fully empty rows
-    const nonEmpty = rows.filter((row) => row.some((cell) => cell !== null && cell !== ''));
-    if (nonEmpty.length === 0) return null;
+interface UploadedFileState {
+  file: File | null;
+  name: string;
+}
 
-    // Build markdown table from first sheet
-    const header = nonEmpty[0].map((c) => String(c ?? '').trim());
-    const divider = header.map(() => '---');
-    const dataRows = nonEmpty.slice(1).map((row) =>
-      header.map((_, i) => String(row[i] ?? '').trim())
-    );
+const ACCEPTED_EXTENSIONS = ['.xlsx', '.xls'];
 
-    const lines = [
-      `| ${header.join(' | ')} |`,
-      `| ${divider.join(' | ')} |`,
-      ...dataRows.map((row) => `| ${row.join(' | ')} |`),
-    ];
+function isExcelFile(file: File) {
+  const lower = file.name.toLowerCase();
+  return ACCEPTED_EXTENSIONS.some((suffix) => lower.endsWith(suffix));
+}
 
-    return {
-      name: `${fileName} · ${sheetName}`,
-      text: lines.join('\n'),
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const base64 = result.includes(',') ? result.split(',')[1] : result;
+      if (!base64) {
+        reject(new Error('文件读取失败'));
+        return;
+      }
+      resolve(base64);
     };
-  }).filter(Boolean) as TableData[];
+    reader.onerror = () => reject(new Error('文件读取失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function getDownloadName(header: string | null, fallback: string) {
+  if (!header) return fallback;
+  const utfMatch = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utfMatch?.[1]) {
+    try {
+      return decodeURIComponent(utfMatch[1]);
+    } catch {
+      return utfMatch[1];
+    }
+  }
+  const plainMatch = header.match(/filename="?([^"]+)"?/i);
+  return plainMatch?.[1] || fallback;
+}
+
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 export default function DailyReportApp({ classInfo, onBack }: Props) {
-  const [tables, setTables] = useState<TableData[]>([]);
-  const [fileNames, setFileNames] = useState<string[]>([]);
-  const [note, setNote] = useState('');
+  const [reportMode, setReportMode] = useState<ReportMode>('standard');
+  const [className, setClassName] = useState(classInfo.name || '');
+  const [studentFile, setStudentFile] = useState<UploadedFileState>({ file: null, name: '' });
+  const [checkinFile, setCheckinFile] = useState<UploadedFileState>({ file: null, name: '' });
   const [loading, setLoading] = useState(false);
-  const [report, setReport] = useState('');
   const [error, setError] = useState('');
-  const [copied, setCopied] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const dropRef = useRef<HTMLDivElement>(null);
+  const [success, setSuccess] = useState('');
 
-  function processFiles(files: FileList | File[]) {
-    const arr = Array.from(files).filter((f) =>
-      f.name.endsWith('.xlsx') || f.name.endsWith('.xls') || f.name.endsWith('.csv')
-    );
-    if (arr.length === 0) {
-      setError('请上传 .xlsx / .xls / .csv 格式的文件');
-      return;
-    }
+  const studentInputRef = useRef<HTMLInputElement>(null);
+  const checkinInputRef = useRef<HTMLInputElement>(null);
+
+  const ready = useMemo(() => !!studentFile.file, [studentFile.file]);
+
+  function updateFile(kind: UploadKind, nextFile: File | null) {
     setError('');
+    setSuccess('');
 
-    const newTables: TableData[] = [];
-    const newNames: string[] = [];
-    let done = 0;
-
-    for (const file of arr) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const data = new Uint8Array(e.target!.result as ArrayBuffer);
-          const wb = XLSX.read(data, { type: 'array' });
-          const parsed = xlsxToMarkdown(wb, file.name);
-          newTables.push(...parsed);
-          newNames.push(file.name);
-        } catch {
-          // skip unparseable files
-        }
-        done++;
-        if (done === arr.length) {
-          setTables((prev) => [...prev, ...newTables]);
-          setFileNames((prev) => [...prev, ...newNames]);
-          setReport('');
-        }
-      };
-      reader.readAsArrayBuffer(file);
-    }
-  }
-
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    if (e.target.files) processFiles(e.target.files);
-    e.target.value = '';
-  }
-
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
-    dropRef.current?.classList.remove('drag-over');
-    if (e.dataTransfer.files) processFiles(e.dataTransfer.files);
-  }
-
-  function removeFile(name: string) {
-    setFileNames((prev) => prev.filter((n) => n !== name));
-    setTables((prev) => prev.filter((t) => !t.name.startsWith(name)));
-    setReport('');
-  }
-
-  async function generate() {
-    if (tables.length === 0) {
-      setError('请先上传数据文件');
+    if (!nextFile) {
+      if (kind === 'student') setStudentFile({ file: null, name: '' });
+      if (kind === 'checkin') setCheckinFile({ file: null, name: '' });
       return;
     }
+
+    if (!isExcelFile(nextFile)) {
+      setError('请上传 .xlsx 或 .xls 文件');
+      return;
+    }
+
+    const nextState = { file: nextFile, name: nextFile.name };
+    if (kind === 'student') setStudentFile(nextState);
+    if (kind === 'checkin') setCheckinFile(nextState);
+  }
+
+  function onFileChange(kind: UploadKind, event: React.ChangeEvent<HTMLInputElement>) {
+    updateFile(kind, event.target.files?.[0] || null);
+    event.target.value = '';
+  }
+
+  async function generateReport() {
+    if (!studentFile.file) {
+      setError('请先上传学生个人数据文件');
+      return;
+    }
+
     setLoading(true);
     setError('');
-    setReport('');
+    setSuccess('');
+
     try {
-      const resp = await fetch('/api/ai/daily-report', {
+      const studentContent = await readFileAsBase64(studentFile.file);
+      const checkinContent = checkinFile.file ? await readFileAsBase64(checkinFile.file) : '';
+
+      const response = await fetch('/api/reports/class-daily-report', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ classCode: classInfo.name, tables, note }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          className: className.trim(),
+          reportMode,
+          studentFile: {
+            name: studentFile.file.name,
+            content: studentContent,
+          },
+          checkinFile: {
+            name: checkinFile.file?.name || '',
+            content: checkinContent,
+          },
+        }),
       });
-      const json = await resp.json();
-      if (!resp.ok || json.error) throw new Error(json.error || '生成失败');
-      setReport(json.report ?? '');
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '生成失败');
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || '班级日报生成失败');
+      }
+
+      const blob = await response.blob();
+      const fallbackName = `${className || classInfo.name}${reportMode === 'detail' ? '明细版本' : '完成公示'}.xlsx`;
+      const filename = getDownloadName(response.headers.get('Content-Disposition'), fallbackName);
+      triggerDownload(blob, filename);
+      setSuccess(`已生成并下载：${filename}`);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : '班级日报生成失败');
     } finally {
       setLoading(false);
     }
   }
-
-  function copyReport() {
-    navigator.clipboard.writeText(report).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }
-
-  const hasTables = tables.length > 0;
 
   return (
     <div className="dr-wrap fade-in">
@@ -151,77 +161,105 @@ export default function DailyReportApp({ classInfo, onBack }: Props) {
       </div>
 
       <div className="dr-body">
-        {/* Upload zone */}
-        <div
-          ref={dropRef}
-          className={`dr-dropzone${hasTables ? ' dr-dropzone-compact' : ''}`}
-          onDragOver={(e) => { e.preventDefault(); dropRef.current?.classList.add('drag-over'); }}
-          onDragLeave={() => dropRef.current?.classList.remove('drag-over')}
-          onDrop={handleDrop}
-          onClick={() => fileRef.current?.click()}
-        >
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            multiple
-            style={{ display: 'none' }}
-            onChange={handleFileChange}
-          />
-          {hasTables ? (
-            <span className="dr-dropzone-hint">点击或拖入继续添加文件</span>
-          ) : (
-            <>
-              <div className="dr-dropzone-icon">📂</div>
-              <div className="dr-dropzone-text">将 Excel / CSV 文件拖到这里，或点击选择</div>
-              <div className="dr-dropzone-sub">支持同时上传多个文件（.xlsx / .xls / .csv）</div>
-            </>
-          )}
+        <div className="dr-hero">
+          <div className="dr-hero-badge">RemoteLab 版本</div>
+          <h2 className="dr-hero-title">这里生成的是班级群实际要发的那套 Excel 日报</h2>
+          <p className="dr-hero-text">
+            上传两份源表后，直接输出和 RemoteLab 里一致的成品文件。
+            标准版会生成“完成公示 + 质量分析”，明细版会生成按分数展示的公示表。
+          </p>
         </div>
 
-        {/* File list */}
-        {fileNames.length > 0 && (
-          <div className="dr-file-list">
-            {fileNames.map((name) => (
-              <div key={name} className="dr-file-tag">
-                <span>📄 {name}</span>
-                <button className="dr-file-remove" onClick={() => removeFile(name)}>×</button>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="dr-mode-row">
+          <button
+            type="button"
+            className={`dr-mode-btn${reportMode === 'standard' ? ' active' : ''}`}
+            onClick={() => setReportMode('standard')}
+          >
+            标准版
+          </button>
+          <button
+            type="button"
+            className={`dr-mode-btn${reportMode === 'detail' ? ' active' : ''}`}
+            onClick={() => setReportMode('detail')}
+          >
+            明细版
+          </button>
+        </div>
 
-        {/* Note field */}
-        <textarea
-          className="dr-note"
-          placeholder="老师补充说明（可选）：本节课重点、特殊情况等..."
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          rows={3}
-        />
+        <div className="dr-panel">
+          <label className="dr-field-label" htmlFor="daily-report-class-name">班名</label>
+          <input
+            id="daily-report-class-name"
+            className="dr-input"
+            value={className}
+            onChange={(event) => setClassName(event.target.value)}
+            placeholder="默认使用当前班级名"
+          />
+        </div>
+
+        <div className="dr-upload-grid">
+          <div className="dr-upload-card">
+            <div className="dr-upload-kicker">文件 1</div>
+            <div className="dr-upload-title">学生个人数据</div>
+            <div className="dr-upload-desc">需要包含 数据底表 / 概览 / 数据情况</div>
+            <input
+              ref={studentInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="dr-hidden-input"
+              onChange={(event) => onFileChange('student', event)}
+            />
+            <button className="dr-upload-btn" onClick={() => studentInputRef.current?.click()}>
+              {studentFile.name ? '重新选择' : '选择文件'}
+            </button>
+            <div className={`dr-file-pill${studentFile.name ? ' filled' : ''}`}>
+              {studentFile.name || '未上传'}
+            </div>
+          </div>
+
+          <div className="dr-upload-card">
+            <div className="dr-upload-kicker">文件 2</div>
+            <div className="dr-upload-title">打卡情况</div>
+            <div className="dr-upload-desc">选填；如果不传，成品里不会出现打卡列</div>
+            <input
+              ref={checkinInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="dr-hidden-input"
+              onChange={(event) => onFileChange('checkin', event)}
+            />
+            <button className="dr-upload-btn" onClick={() => checkinInputRef.current?.click()}>
+              {checkinFile.name ? '重新选择' : '选择文件'}
+            </button>
+            <div className={`dr-file-pill${checkinFile.name ? ' filled' : ''}`}>
+              {checkinFile.name || '未上传'}
+            </div>
+          </div>
+        </div>
+
+        <div className="dr-tips">
+          <div className="dr-tip">
+            标准版：输出一个 Excel，含「完成公示」和「质量分析」两个 sheet。
+          </div>
+          <div className="dr-tip">
+            明细版：按测试得分、AI语音平均分、词王准确率、小挑战生成明细公示。
+          </div>
+          <div className="dr-tip">
+            打卡情况：选填。不上传时会直接移除打卡列。
+          </div>
+        </div>
 
         {error && <div className="dr-error">{error}</div>}
+        {success && <div className="dr-success">{success}</div>}
 
         <button
           className={`dr-generate-btn${loading ? ' loading' : ''}`}
-          onClick={generate}
-          disabled={loading || !hasTables}
+          onClick={generateReport}
+          disabled={loading || !ready}
         >
-          {loading ? '生成中...' : '✨ 生成日报'}
+          {loading ? '生成中...' : '生成并下载 Excel'}
         </button>
-
-        {/* Report output */}
-        {report && (
-          <div className="dr-result">
-            <div className="dr-result-header">
-              <span>生成结果</span>
-              <button className="dr-copy-btn" onClick={copyReport}>
-                {copied ? '已复制 ✓' : '复制全文'}
-              </button>
-            </div>
-            <pre className="dr-result-body">{report}</pre>
-          </div>
-        )}
       </div>
     </div>
   );
