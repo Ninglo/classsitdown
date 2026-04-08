@@ -5,6 +5,7 @@ import { calculateMP, SCHEMES } from '../utils/calculateMP';
 import { getCurrentWeek } from '../utils/weekNumber';
 import { loadSavedSchemes, saveScheme, deleteScheme } from '../utils/customScheme';
 import { saveBonusRecord, getBonusNames, getLastAmount, getHistoryForBonus } from '../utils/bonusHistory';
+import { getClassProfile } from '../utils/classProfiles';
 import CustomSchemeEditor from './CustomSchemeEditor';
 import ResultView from './ResultView';
 import './DistributionFlow.css';
@@ -32,6 +33,7 @@ const MODULE_REQUIRED: Record<Module, boolean> = {
 };
 
 const QUICK_ROSTER_KEY = 'amber_mp_quick_rosters_v1';
+type EntryMode = 'standard' | 'quick';
 
 function normalizeStudentName(raw: string): string {
   return String(raw || '').replace(/\s+/g, ' ').trim();
@@ -59,6 +61,15 @@ function loadQuickRoster(classCode: string): StudentRecord[] {
   try {
     const key = String(classCode || '').trim().toUpperCase();
     if (!key) return [];
+    const profileRoster = (getClassProfile(key)?.students || [])
+      .filter((student) => student.studentId)
+      .map((student) => ({
+        studentId: String(student.studentId || ''),
+        chineseName: student.chineseName,
+        englishName: student.englishName || '',
+        classCode: key,
+      }));
+    if (profileRoster.length > 0) return profileRoster;
     const raw = localStorage.getItem(QUICK_ROSTER_KEY);
     const all = raw ? JSON.parse(raw) : {};
     return Array.isArray(all[key]) ? all[key] : [];
@@ -121,6 +132,7 @@ export default function DistributionFlow({ classInfo, onBack, onSessionExpired }
   const isManual = classInfo.id === 'manual';
   const [manualCode, setManualCode] = useState('');
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [entryMode, setEntryMode] = useState<EntryMode>('standard');
   const [selectedModules, setSelectedModules] = useState<Set<Module>>(new Set(['基础落实']));
   const [basicFile, setBasicFile] = useState<File | null>(null);
   const [dailyFile, setDailyFile] = useState<File | null>(null);
@@ -197,12 +209,17 @@ export default function DistributionFlow({ classInfo, onBack, onSessionExpired }
     setStep(4);
   }
 
-  const STEPS = [
-    { n: 1, label: '选择模块' },
-    { n: 2, label: '上传文件' },
-    { n: 3, label: '确认明细' },
-    { n: 4, label: '生成输出' },
-  ];
+  const STEPS = entryMode === 'quick'
+    ? [
+        { n: 1, label: '选择方式' },
+        { n: 2, label: '快捷生成' },
+      ]
+    : [
+        { n: 1, label: '选择方式' },
+        { n: 2, label: '上传文件' },
+        { n: 3, label: '确认明细' },
+        { n: 4, label: '生成输出' },
+      ];
 
   return (
     <div className="flow-wrap fade-in">
@@ -239,15 +256,16 @@ export default function DistributionFlow({ classInfo, onBack, onSessionExpired }
       {error && <div className="flow-error">{error}</div>}
 
       {step === 1 && (
-        <StepModules
+        <StepEntry
+          mode={entryMode}
+          onModeChange={setEntryMode}
           selected={selectedModules}
           onToggle={toggleModule}
           onNext={() => setStep(2)}
         />
       )}
-      {step === 2 && (
+      {step === 2 && entryMode === 'standard' && (
         <StepUpload
-          classCode={displayCode}
           modules={selectedModules}
           basicFile={basicFile}
           dailyFile={dailyFile}
@@ -256,6 +274,12 @@ export default function DistributionFlow({ classInfo, onBack, onSessionExpired }
           onBack={() => setStep(1)}
           onNext={handleLoadFiles}
           loading={loading}
+        />
+      )}
+      {step === 2 && entryMode === 'quick' && (
+        <StepQuick
+          classCode={displayCode}
+          onBack={() => setStep(1)}
         />
       )}
       {step === 3 && (
@@ -313,45 +337,85 @@ export default function DistributionFlow({ classInfo, onBack, onSessionExpired }
   );
 }
 
-function StepModules({
+function StepEntry({
+  mode,
+  onModeChange,
   selected,
   onToggle,
   onNext,
 }: {
+  mode: EntryMode;
+  onModeChange: (mode: EntryMode) => void;
   selected: Set<Module>;
   onToggle: (m: Module) => void;
   onNext: () => void;
 }) {
   return (
     <div className="step-card card">
-      <h3 className="step-heading">选择发放模块</h3>
-      <p className="step-sub">勾选本次需要计算的项目，基础落实为必选</p>
-      <div className="module-list">
-        {ALL_MODULES.map((m) => (
-          <label key={m} className={`module-item ${selected.has(m) ? 'selected' : ''} ${MODULE_REQUIRED[m] ? 'required' : ''}`}>
-            <input
-              type="checkbox"
-              checked={selected.has(m)}
-              onChange={() => onToggle(m)}
-              disabled={MODULE_REQUIRED[m]}
-            />
-            <div className="module-info">
-              <span className="module-name">{m}</span>
-              {MODULE_REQUIRED[m] && <span className="tag tag-green" style={{ fontSize: 11, padding: '1px 7px' }}>必选</span>}
-              <p className="module-desc">{MODULE_DESC[m]}</p>
-            </div>
-          </label>
-        ))}
+      <h3 className="step-heading">选择生成方式</h3>
+      <p className="step-sub">先决定走标准流程还是快捷流程，原来的上传和勾选逻辑仍然保留。</p>
+
+      <div className="mode-list">
+        <button
+          type="button"
+          className={`mode-card ${mode === 'standard' ? 'selected' : ''}`}
+          onClick={() => onModeChange('standard')}
+        >
+          <div className="mode-card-head">
+            <strong>标准生成</strong>
+            <span className="tag tag-green">完整流程</span>
+          </div>
+          <p>上传基础落实、打卡文件，继续走后面的确认和勾选。</p>
+        </button>
+        <button
+          type="button"
+          className={`mode-card ${mode === 'quick' ? 'selected' : ''}`}
+          onClick={() => onModeChange('quick')}
+        >
+          <div className="mode-card-head">
+            <strong>快捷生成</strong>
+            <span className="tag">快速入口</span>
+          </div>
+          <p>直接粘贴“中文名 + 数量”，快速生成 MP 标准模板，不先进入上传页。</p>
+        </button>
       </div>
+
+      {mode === 'standard' && (
+        <>
+          <div>
+            <h4 className="sub-section-title">标准流程模块</h4>
+            <p className="sub-section-sub">勾选本次需要计算的项目，基础落实为必选。</p>
+          </div>
+          <div className="module-list">
+            {ALL_MODULES.map((m) => (
+              <label key={m} className={`module-item ${selected.has(m) ? 'selected' : ''} ${MODULE_REQUIRED[m] ? 'required' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={selected.has(m)}
+                  onChange={() => onToggle(m)}
+                  disabled={MODULE_REQUIRED[m]}
+                />
+                <div className="module-info">
+                  <span className="module-name">{m}</span>
+                  {MODULE_REQUIRED[m] && <span className="tag tag-green" style={{ fontSize: 11, padding: '1px 7px' }}>必选</span>}
+                  <p className="module-desc">{MODULE_DESC[m]}</p>
+                </div>
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+
       <div className="step-actions">
-        <button className="btn btn-primary" onClick={onNext}>下一步 →</button>
+        <button className="btn btn-primary" onClick={onNext}>
+          {mode === 'standard' ? '进入上传 →' : '进入快捷生成 →'}
+        </button>
       </div>
     </div>
   );
 }
 
 function StepUpload({
-  classCode,
   modules,
   basicFile,
   dailyFile,
@@ -361,7 +425,6 @@ function StepUpload({
   onNext,
   loading,
 }: {
-  classCode: string;
   modules: Set<Module>;
   basicFile: File | null;
   dailyFile: File | null;
@@ -371,13 +434,54 @@ function StepUpload({
   onNext: () => void;
   loading: boolean;
 }) {
+  return (
+    <div className="step-card card">
+      <h3 className="step-heading">上传数据文件</h3>
+      <p className="step-sub">从官网下载对应文件后上传</p>
+
+      <div className="upload-list">
+        <UploadField
+          label="基础落实（必须）"
+          hint="文件名格式：J328_学生个人数据_*.xlsx"
+          accept=".xlsx"
+          file={basicFile}
+          onChange={onBasicFile}
+        />
+        {modules.has('每日开口') && (
+          <UploadField
+            label="每日开口（打卡情况）"
+            hint="文件名格式：打卡情况*.xlsx"
+            accept=".xlsx"
+            file={dailyFile}
+            onChange={onDailyFile}
+          />
+        )}
+      </div>
+
+      <div className="step-actions">
+        <button className="btn btn-ghost" onClick={onBack}>← 上一步</button>
+        <button className="btn btn-primary" onClick={onNext} disabled={loading || !basicFile}>
+          {loading ? <><span className="spinner" /> 解析中...</> : '解析文件 →'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StepQuick({
+  classCode,
+  onBack,
+}: {
+  classCode: string;
+  onBack: () => void;
+}) {
   const rememberedRoster = loadQuickRoster(classCode);
   const [quickInput, setQuickInput] = useState('');
   const [quickMessage, setQuickMessage] = useState('');
 
   function downloadQuickTemplate() {
     if (!rememberedRoster.length) {
-      setQuickMessage('这个班目前还没有记住学号名单。先完整上传一次基础落实文件，后面就能走快捷模式。');
+      setQuickMessage('这个班目前还没有记住学号名单。先完整上传一次基础落实文件，后面这里就能反复直接生成。');
       return;
     }
     const rewards = parseQuickRewardText(quickInput);
@@ -411,33 +515,14 @@ function StepUpload({
 
   return (
     <div className="step-card card">
-      <h3 className="step-heading">上传数据文件</h3>
-      <p className="step-sub">从官网下载对应文件后上传</p>
-
-      <div className="upload-list">
-        <UploadField
-          label="基础落实（必须）"
-          hint="文件名格式：J328_学生个人数据_*.xlsx"
-          accept=".xlsx"
-          file={basicFile}
-          onChange={onBasicFile}
-        />
-        {modules.has('每日开口') && (
-          <UploadField
-            label="每日开口（打卡情况）"
-            hint="文件名格式：打卡情况*.xlsx"
-            accept=".xlsx"
-            file={dailyFile}
-            onChange={onDailyFile}
-          />
-        )}
-      </div>
+      <h3 className="step-heading">快捷生成 MP 标准模板</h3>
+      <p className="step-sub">这里是单独的快捷流程，不再混在上传文件步骤里。</p>
 
       <div className="quick-template-box">
         <div className="quick-template-head">
           <div>
-            <strong>快捷生成 MP 标准模板</strong>
-            <p>如果这个班已经记住过学号和名单，这里直接粘贴“中文名 + 数量”就能出标准 Excel。</p>
+            <strong>按中文名直接生成</strong>
+            <p>如果这个班已经记住过学号和名单，直接粘贴“中文名 + 数量”就能出标准 Excel。</p>
           </div>
           <span className={`quick-template-badge${rememberedRoster.length ? ' active' : ''}`}>
             {rememberedRoster.length ? `已记住 ${rememberedRoster.length} 人` : '暂未记住名单'}
@@ -445,7 +530,7 @@ function StepUpload({
         </div>
         <textarea
           className="input-field quick-template-input"
-          rows={6}
+          rows={8}
           placeholder={'李晓彤 0.5\n周子然 1\n王一诺 0.8'}
           value={quickInput}
           onChange={(event) => setQuickInput(event.target.value)}
@@ -461,9 +546,6 @@ function StepUpload({
 
       <div className="step-actions">
         <button className="btn btn-ghost" onClick={onBack}>← 上一步</button>
-        <button className="btn btn-primary" onClick={onNext} disabled={loading || !basicFile}>
-          {loading ? <><span className="spinner" /> 解析中...</> : '解析文件 →'}
-        </button>
       </div>
     </div>
   );

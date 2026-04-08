@@ -83,6 +83,14 @@ export default function Welcome({ teacherName, classes, onSelectClass, onLogout,
           <div className="toolbox-section">
             <div className="toolbox-title">工具箱</div>
             <div className="toolbox-grid">
+              <button className="toolbox-card" onClick={() => onNavigate('roster')}>
+                <span className="toolbox-card-icon">🧾</span>
+                <div className="toolbox-card-body">
+                  <strong>班级准确信息核对</strong>
+                  <p>批量导入并核对学号 / 中文名 / 英文名</p>
+                </div>
+                <span className="toolbox-card-arrow">→</span>
+              </button>
               <button className="toolbox-card" onClick={() => onNavigate('makeup')}>
                 <span className="toolbox-card-icon">💊</span>
                 <div className="toolbox-card-body">
@@ -233,18 +241,19 @@ export default function Welcome({ teacherName, classes, onSelectClass, onLogout,
         <div className="batch-import-panel card">
           <div className="batch-import-copy">
             <div className="batch-import-kicker">批量导入</div>
-            <h2>导入多个班级座位表</h2>
+            <h2>先导准确信息，再导座位变化</h2>
             <p>
-              现在可以直接上传图片、截图、拍照、PDF 和文本。
-              系统会先自动识别班级号和名单，写进本机草稿；识别不准时也能继续手动补。
+              当前推荐顺序是：先把这个班的学号、中文名、英文名导成硬数据，
+              再去导座位表图片或座位变化。座位表里识别出的名单更适合当成动态版本，
+              不适合直接替代正式名单底座。
             </p>
           </div>
           <div className="batch-import-actions">
-            <button className="btn btn-primary btn-sm" onClick={() => openGuide('batch-import')}>
-              打开导入区
+            <button className="btn btn-primary btn-sm" onClick={() => onNavigate('roster')}>
+              先导正式名单
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => openGuide('top')}>
-              看最新说明
+            <button className="btn btn-ghost btn-sm" onClick={() => openGuide('batch-import')}>
+              再看座位表导入
             </button>
           </div>
         </div>

@@ -18,7 +18,8 @@ interface FeatureItem {
 }
 
 const FEATURES: FeatureItem[] = [
-  { icon: '🪑', title: '座位表',       desc: '最新座位表版本，自动读取已录入上课时间', target: 'seating' },
+  { icon: '🧾', title: '准确信息',     desc: '先导入学号、中文名、英文名，作为这个班的硬数据底座', target: 'roster' },
+  { icon: '🪑', title: '座位表',       desc: '查看座位、名单、上课时间；图片识别后先在这里确认', target: 'seating' },
   { icon: '🏆', title: 'MP 积分发放',  desc: 'MP 计算、导出图片 & Excel',            target: 'flow' },
   { icon: '📋', title: '课程概览',     desc: '简报制作，模块拼接导出',                target: 'overview' },
   { icon: '📗', title: '班级日报',     desc: '上传 Excel 数据，AI 自动生成日报',       target: 'daily-report' },

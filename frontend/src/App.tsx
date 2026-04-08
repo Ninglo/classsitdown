@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import Login from './components/Login';
 import Welcome from './components/Welcome';
 import ClassHub from './components/ClassHub';
+import ClassRosterApp from './components/ClassRosterApp';
 import DistributionFlow from './components/DistributionFlow';
 import NewestSeatingFrame from './components/NewestSeatingFrame';
 import MakeupTool from './components/MakeupTool';
@@ -109,6 +110,13 @@ export default function App() {
           onNavigate={handleNavigate}
         />
       )}
+      {screen === 'roster' && (
+        <ClassRosterApp
+          classInfo={selectedClass}
+          knownClasses={classes}
+          onBack={selectedClass ? handleBackToHub : handleBackToWelcome}
+        />
+      )}
       {screen === 'hub' && selectedClass && (
         <ClassHub
           classInfo={selectedClass}
@@ -121,6 +129,13 @@ export default function App() {
           classInfo={selectedClass}
           onBack={handleBackToHub}
           onSessionExpired={handleSessionExpired}
+        />
+      )}
+      {screen === 'roster' && (
+        <ClassRosterApp
+          classInfo={selectedClass}
+          knownClasses={classes}
+          onBack={selectedClass ? handleBackToHub : handleBackToWelcome}
         />
       )}
       {selectedClass && (screen === 'hub' || screen === 'seating') && (

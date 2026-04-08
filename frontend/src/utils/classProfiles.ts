@@ -16,13 +16,18 @@ function saveAll(profiles: ClassProfile[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
 }
 
+function normalizeClassCode(classCode: string): string {
+  return String(classCode || '').trim().toUpperCase();
+}
+
 export function getClassProfile(classCode: string): ClassProfile | null {
-  return loadClassProfiles().find((p) => p.classCode === classCode) ?? null;
+  const normalized = normalizeClassCode(classCode);
+  return loadClassProfiles().find((p) => normalizeClassCode(p.classCode) === normalized) ?? null;
 }
 
 export function saveClassProfile(profile: ClassProfile): void {
   const all = loadClassProfiles();
-  const idx = all.findIndex((p) => p.classCode === profile.classCode);
+  const idx = all.findIndex((p) => normalizeClassCode(p.classCode) === normalizeClassCode(profile.classCode));
   if (idx >= 0) all[idx] = profile;
   else all.push(profile);
   saveAll(all);
@@ -30,7 +35,7 @@ export function saveClassProfile(profile: ClassProfile): void {
 
 export function updateClassProfile(classCode: string, updates: Partial<Omit<ClassProfile, 'classCode'>>): ClassProfile {
   const existing = getClassProfile(classCode) ?? {
-    classCode,
+    classCode: normalizeClassCode(classCode),
     schedule: [],
     students: [],
     updatedAt: Date.now(),
@@ -49,24 +54,29 @@ export function mergeStudents(
   incoming: StudentInfo[],
 ): { profile: ClassProfile; added: StudentInfo[] } {
   const profile = getClassProfile(classCode) ?? {
-    classCode,
+    classCode: normalizeClassCode(classCode),
     schedule: [],
     students: [],
     updatedAt: Date.now(),
   };
 
-  const existingNames = new Set(profile.students.map((s) => s.chineseName));
+  const existingNames = new Map(profile.students.map((s) => [s.chineseName, s]));
   const added: StudentInfo[] = [];
 
   for (const s of incoming) {
-    if (!existingNames.has(s.chineseName)) {
+    const existing = existingNames.get(s.chineseName);
+    if (!existing) {
       profile.students.push(s);
-      existingNames.add(s.chineseName);
+      existingNames.set(s.chineseName, s);
       added.push(s);
+    } else {
+      existing.studentId = existing.studentId || s.studentId;
+      existing.englishName = existing.englishName || s.englishName;
+      existing.aliases = [...new Set([...(existing.aliases || []), ...(s.aliases || [])])];
     }
   }
 
-  if (added.length > 0) {
+  if (added.length > 0 || incoming.length > 0) {
     profile.updatedAt = Date.now();
     saveClassProfile(profile);
   }
@@ -175,8 +185,25 @@ function normalizeStudentName(raw: unknown): string {
 
 function createStudentRecord(classCode: string, chineseName: string): StudentInfo {
   return {
-    id: `${classCode}_${chineseName}`.replace(/\s+/g, '_'),
+    id: `${normalizeClassCode(classCode)}_${chineseName}`.replace(/\s+/g, '_'),
     chineseName,
+  };
+}
+
+function createPreciseStudentRecord(
+  classCode: string,
+  studentId: string,
+  chineseName: string,
+  englishName = '',
+): StudentInfo {
+  const normalizedCode = normalizeClassCode(classCode);
+  const cleanId = studentId.trim();
+  return {
+    id: cleanId ? `${normalizedCode}_${cleanId}` : `${normalizedCode}_${chineseName}`.replace(/\s+/g, '_'),
+    studentId: cleanId || undefined,
+    chineseName: chineseName.trim(),
+    englishName: englishName.trim() || undefined,
+    aliases: [],
   };
 }
 
@@ -230,6 +257,62 @@ export function saveStudentList(classCode: string, studentNames: string[]): Clas
   return updateClassProfile(classCode, {
     students: uniqueNames.map((name) => createStudentRecord(classCode, name)),
   });
+}
+
+export function savePreciseStudentList(
+  classCode: string,
+  students: Array<{ studentId?: string; chineseName: string; englishName?: string }>,
+): ClassProfile {
+  const normalizedCode = normalizeClassCode(classCode);
+  const cleaned = students
+    .map((student) => ({
+      studentId: String(student.studentId || '').trim(),
+      chineseName: normalizeStudentName(student.chineseName),
+      englishName: String(student.englishName || '').trim(),
+    }))
+    .filter((student) => student.chineseName);
+
+  const deduped = new Map<string, StudentInfo>();
+  for (const student of cleaned) {
+    deduped.set(
+      student.chineseName,
+      createPreciseStudentRecord(normalizedCode, student.studentId, student.chineseName, student.englishName),
+    );
+  }
+
+  return updateClassProfile(normalizedCode, {
+    students: [...deduped.values()],
+  });
+}
+
+export function upsertPreciseStudents(
+  classCode: string,
+  students: Array<{ studentId?: string; chineseName: string; englishName?: string }>,
+): ClassProfile {
+  const incoming = students
+    .map((student) => createPreciseStudentRecord(classCode, String(student.studentId || ''), student.chineseName, student.englishName))
+    .filter((student) => student.chineseName);
+  mergeStudents(classCode, incoming);
+  return getClassProfile(classCode) ?? updateClassProfile(classCode, {});
+}
+
+export function removeStudentFromClass(classCode: string, studentKey: string): ClassProfile | null {
+  const profile = getClassProfile(classCode);
+  if (!profile) return null;
+  profile.students = profile.students.filter(
+    (student) => student.id !== studentKey && student.studentId !== studentKey && student.chineseName !== studentKey,
+  );
+  profile.updatedAt = Date.now();
+  saveClassProfile(profile);
+  return profile;
+}
+
+export function listKnownClassCodes(classCodes: string[] = []): string[] {
+  const known = new Set(classCodes.map((item) => normalizeClassCode(item)).filter(Boolean));
+  for (const profile of loadClassProfiles()) {
+    known.add(normalizeClassCode(profile.classCode));
+  }
+  return [...known].filter(Boolean).sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
 }
 
 export function hasSeatingData(classCode: string): boolean {

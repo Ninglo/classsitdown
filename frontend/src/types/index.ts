@@ -86,7 +86,7 @@ export interface BonusHistoryEntry {
   records: BonusHistoryRecord[];
 }
 
-export type AppScreen = 'login' | 'welcome' | 'hub' | 'flow' | 'seating' | 'overview' | 'makeup' | 'daily-report';
+export type AppScreen = 'login' | 'welcome' | 'hub' | 'flow' | 'seating' | 'overview' | 'makeup' | 'daily-report' | 'roster';
 
 export type DayOfWeek = '周一' | '周二' | '周三' | '周四' | '周五' | '周六' | '周日';
 
@@ -102,8 +102,10 @@ export interface ScheduleSlot {
 
 export interface StudentInfo {
   id: string;
+  studentId?: string;
   chineseName: string;
   englishName?: string;
+  aliases?: string[];
 }
 
 export interface ClassProfile {
