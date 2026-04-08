@@ -131,13 +131,6 @@ export default function App() {
           onSessionExpired={handleSessionExpired}
         />
       )}
-      {screen === 'roster' && (
-        <ClassRosterApp
-          classInfo={selectedClass}
-          knownClasses={classes}
-          onBack={selectedClass ? handleBackToHub : handleBackToWelcome}
-        />
-      )}
       {selectedClass && (screen === 'hub' || screen === 'seating') && (
         <NewestSeatingFrame
           classCode={selectedClass.name}
