@@ -76,14 +76,6 @@ export default function Welcome({ teacherName, classes, onSelectClass, onLogout,
       </header>
 
       <div className="welcome-body">
-        <div className="welcome-intro card">
-          <p>
-            每天花在整理名单、核对英文名、调整座位、补课堂记录、拼概览素材上的时间，
-            本可以用来做更重要的事。把这些重复的班级事务收进一套系统里，
-            琐事收纳，快捷转化，不用再在表格和聊天记录里来回翻。
-          </p>
-        </div>
-
         <div className="welcome-toolbox-area">
           <div className="toolbox-section">
             <div className="toolbox-title">工具箱</div>
