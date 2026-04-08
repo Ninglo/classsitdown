@@ -12,6 +12,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 3001);
 const SESSION_COOKIE = 'amber_sid';
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
+const CNF_BASE_URL = process.env.CNFADMIN_BASE_URL || 'https://cnfadmin.cnfschool.net';
 const sessions = new Map();
 
 app.use(cors({ origin: true, credentials: true }));
@@ -94,12 +95,11 @@ app.post('/api/scraper/login', async (req, res) => {
     }
 
     const scraper = new EducationSystemScraper({
-      baseUrl: 'https://cnfadmin.cnfschool.net',
+      baseUrl: CNF_BASE_URL,
       username,
       password,
     });
 
-    await scraper.initBrowser();
     await scraper.login();
     console.log(`✅ 登录成功: ${username}`);
 
@@ -942,6 +942,10 @@ app.use((_req, res) => {
   res.sendFile(path.join(distDir, 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Amber server running at http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Amber server running at http://localhost:${PORT}`);
+  });
+}
+
+module.exports = { app, sessions };

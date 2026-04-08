@@ -5,6 +5,7 @@
 
 const puppeteer = require('puppeteer');
 const fs = require('fs');
+const cheerio = require('cheerio');
 
 class EducationSystemScraper {
   constructor(options = {}) {
@@ -13,7 +14,9 @@ class EducationSystemScraper {
     this.password = options.password;
     this.browser = null;
     this.page = null;
-    this.cookies = null;
+    this.cookies = [];
+    this.cookieJar = new Map();
+    this.browserSessionReady = false;
     this.classMapCache = [];
     this.classMapCacheAt = 0;
   }
@@ -31,6 +34,7 @@ class EducationSystemScraper {
         executablePath,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
       });
+      this.browserSessionReady = false;
       console.log('✅ Puppeteer浏览器已启动');
       return this.browser;
     } catch (error) {
@@ -44,23 +48,273 @@ class EducationSystemScraper {
    */
   async ensurePageReady() {
     if (!this.browser) {
-      throw new Error('浏览器未初始化，请先调用login()');
+      await this.initBrowser();
     }
+
+    let needsHydration = false;
 
     if (!this.page || this.page.isClosed()) {
       this.page = await this.browser.newPage();
-      return;
+      needsHydration = true;
+    } else {
+      try {
+        await this.page.evaluate(() => 1);
+      } catch (error) {
+        this.page = await this.browser.newPage();
+        needsHydration = true;
+      }
     }
 
-    try {
-      await this.page.evaluate(() => 1);
-    } catch (error) {
-      this.page = await this.browser.newPage();
+    if (needsHydration) {
+      this.browserSessionReady = false;
+    }
+
+    if (!this.browserSessionReady) {
+      await this.hydrateBrowserSession();
     }
   }
 
   async sleep(ms) {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  getCookieHeader() {
+    return Array.from(this.cookieJar.values())
+      .map((cookie) => `${cookie.name}=${cookie.value}`)
+      .join('; ');
+  }
+
+  splitSetCookieHeader(value = '') {
+    return String(value)
+      .split(/,(?=\s*[A-Za-z0-9!#$%&'*+\-.^_`|~]+=)/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  parseSetCookie(header = '') {
+    const parts = String(header).split(';').map((part) => part.trim()).filter(Boolean);
+    if (parts.length === 0) return null;
+
+    const firstEquals = parts[0].indexOf('=');
+    if (firstEquals <= 0) return null;
+
+    const hostname = new URL(this.baseUrl).hostname;
+    const cookie = {
+      name: parts[0].slice(0, firstEquals),
+      value: parts[0].slice(firstEquals + 1),
+      domain: hostname,
+      path: '/',
+      secure: this.baseUrl.startsWith('https://'),
+      httpOnly: false,
+    };
+
+    for (const attr of parts.slice(1)) {
+      const eqIndex = attr.indexOf('=');
+      const rawKey = (eqIndex === -1 ? attr : attr.slice(0, eqIndex)).trim().toLowerCase();
+      const rawValue = eqIndex === -1 ? '' : attr.slice(eqIndex + 1).trim();
+
+      if (rawKey === 'path' && rawValue) {
+        cookie.path = rawValue;
+      } else if (rawKey === 'domain' && rawValue) {
+        cookie.domain = rawValue.replace(/^\./, '');
+      } else if (rawKey === 'expires' && rawValue) {
+        const expiresAt = Date.parse(rawValue);
+        if (!Number.isNaN(expiresAt)) {
+          cookie.expires = expiresAt;
+        }
+      } else if (rawKey === 'max-age' && rawValue) {
+        const seconds = Number(rawValue);
+        if (Number.isFinite(seconds)) {
+          cookie.expires = Date.now() + seconds * 1000;
+        }
+      } else if (rawKey === 'secure') {
+        cookie.secure = true;
+      } else if (rawKey === 'httponly') {
+        cookie.httpOnly = true;
+      } else if (rawKey === 'samesite' && rawValue) {
+        cookie.sameSite = rawValue[0].toUpperCase() + rawValue.slice(1).toLowerCase();
+      }
+    }
+
+    return cookie;
+  }
+
+  updateCookiesFromHeaders(headers) {
+    const rawSetCookies =
+      typeof headers.getSetCookie === 'function'
+        ? headers.getSetCookie()
+        : this.splitSetCookieHeader(headers.get('set-cookie') || '');
+
+    for (const rawCookie of rawSetCookies) {
+      const parsed = this.parseSetCookie(rawCookie);
+      if (!parsed) continue;
+
+      if (parsed.expires && parsed.expires <= Date.now()) {
+        this.cookieJar.delete(parsed.name);
+        continue;
+      }
+
+      this.cookieJar.set(parsed.name, parsed);
+    }
+
+    this.cookies = Array.from(this.cookieJar.values()).map((cookie) => ({
+      name: cookie.name,
+      value: cookie.value,
+      domain: cookie.domain,
+      path: cookie.path,
+      secure: cookie.secure,
+      httpOnly: cookie.httpOnly,
+      ...(cookie.sameSite ? { sameSite: cookie.sameSite } : {}),
+      ...(cookie.expires ? { expires: Math.floor(cookie.expires / 1000) } : {}),
+    }));
+  }
+
+  getDecodedCookieValue(name) {
+    const value = this.cookieJar.get(name)?.value || '';
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+
+  async request(path, options = {}) {
+    const url = /^https?:\/\//i.test(path) ? path : new URL(path, this.baseUrl).toString();
+    const headers = { ...(options.headers || {}) };
+    const cookieHeader = this.getCookieHeader();
+    if (cookieHeader) {
+      headers.cookie = cookieHeader;
+    }
+
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      redirect: options.redirect || 'follow',
+    });
+
+    this.updateCookiesFromHeaders(response.headers);
+    return response;
+  }
+
+  async requestText(path, options = {}) {
+    const response = await this.request(path, options);
+    const text = await response.text();
+    return { response, text };
+  }
+
+  extractLoginToken(html = '') {
+    const hiddenInputMatch = html.match(/name=["']_token["'][^>]*value=["']([^"']+)["']/i);
+    if (hiddenInputMatch?.[1]) {
+      return hiddenInputMatch[1];
+    }
+
+    const inlineTokenMatch = html.match(/_token:\s*"([^"]+)"/);
+    if (inlineTokenMatch?.[1]) {
+      return inlineTokenMatch[1];
+    }
+
+    return '';
+  }
+
+  isLoginPage(html = '', url = '') {
+    const text = String(html);
+    return (
+      String(url).includes('/admin/auth/login')
+      || text.includes('submitLoginForm')
+      || text.includes('C&F School教务管理系统 | 登录')
+    );
+  }
+
+  extractClassMapFromHtml(html = '') {
+    const $ = cheerio.load(html);
+    const normalize = (text) => (text || '').replace(/\s+/g, ' ').trim();
+    const codePattern = /\b([A-Z]{1,3}\d{2,4})\b/i;
+    const selectors = [
+      '.small-box',
+      '.box',
+      '.panel',
+      '.col-md-3',
+      '.col-sm-3',
+      '.col-xs-6',
+      'li',
+      'tr',
+    ];
+
+    const entries = [];
+    $('a[href*="/admin/squad_console?id="]').each((_, link) => {
+      const href = $(link).attr('href') || '';
+      const idMatch = href.match(/[?&]id=(\d+)/);
+      if (!idMatch) return;
+
+      const squadId = idMatch[1];
+      const candidates = [];
+      for (const selector of selectors) {
+        const node = $(link).closest(selector);
+        if (node.length > 0) {
+          candidates.push(normalize(node.text()));
+        }
+      }
+      candidates.push(normalize($(link).parent().text()));
+      candidates.push(normalize($(link).text()));
+
+      let classCode = '';
+      for (const candidate of candidates) {
+        const hit = candidate.match(codePattern);
+        if (hit?.[1]) {
+          classCode = hit[1].toUpperCase();
+          break;
+        }
+      }
+
+      if (classCode) {
+        entries.push({ classCode, squadId });
+      }
+    });
+
+    const seen = new Set();
+    const unique = [];
+    for (const entry of entries) {
+      const key = `${entry.classCode}_${entry.squadId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(entry);
+    }
+
+    return unique;
+  }
+
+  getPuppeteerCookies() {
+    const hostname = new URL(this.baseUrl).hostname;
+    return Array.from(this.cookieJar.values()).map((cookie) => ({
+      name: cookie.name,
+      value: cookie.value,
+      domain: (cookie.domain || hostname).replace(/^\./, ''),
+      path: cookie.path || '/',
+      secure: Boolean(cookie.secure),
+      httpOnly: Boolean(cookie.httpOnly),
+      ...(cookie.sameSite ? { sameSite: cookie.sameSite } : {}),
+      ...(cookie.expires ? { expires: Math.floor(cookie.expires / 1000) } : {}),
+    }));
+  }
+
+  async hydrateBrowserSession() {
+    if (!this.page || this.page.isClosed()) {
+      throw new Error('浏览器页面不可用，无法恢复登录态');
+    }
+
+    const cookies = this.getPuppeteerCookies();
+    if (cookies.length === 0) {
+      throw new Error('当前没有可用的登录会话，请先调用login()');
+    }
+
+    await this.page.setCookie(...cookies);
+    await this.page.goto(`${this.baseUrl}/admin`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    const html = await this.page.content();
+    if (this.isLoginPage(html, this.page.url())) {
+      throw new Error('登录状态已失效，请重新登录');
+    }
+
+    this.browserSessionReady = true;
   }
 
   async getClassMap(forceRefresh = false) {
@@ -69,58 +323,21 @@ class EducationSystemScraper {
       return this.classMapCache;
     }
 
-    await this.ensurePageReady();
-    await this.page.goto(`${this.baseUrl}/admin`, { waitUntil: 'domcontentloaded', timeout: 15000 });
-    await this.page.waitForSelector('a[href*="/admin/squad_console?id="]', { timeout: 6000 }).catch(() => {});
-
-    const map = await this.page.evaluate(() => {
-      const normalize = (text) => (text || '').replace(/\s+/g, ' ').trim();
-      const codePattern = /\b([A-Z]{1,3}\d{2,4})\b/i;
-      const links = Array.from(document.querySelectorAll('a[href*="/admin/squad_console?id="]'));
-
-      const entries = [];
-      for (const link of links) {
-        const href = link.getAttribute('href') || '';
-        const idMatch = href.match(/id=(\d+)/);
-        if (!idMatch) continue;
-        const squadId = idMatch[1];
-
-        const candidates = [
-          link.closest('.small-box'),
-          link.closest('.box'),
-          link.closest('.panel'),
-          link.closest('.col-md-3'),
-          link.closest('.col-sm-3'),
-          link.closest('.col-xs-6'),
-          link.parentElement,
-          link.closest('li'),
-          link.closest('tr'),
-        ].filter(Boolean);
-
-        let classCode = '';
-        for (const node of candidates) {
-          const text = normalize(node.innerText || '');
-          const hit = text.match(codePattern);
-          if (hit?.[1]) {
-            classCode = hit[1].toUpperCase();
-            break;
-          }
-        }
-
-        if (!classCode) continue;
-        entries.push({ classCode, squadId });
-      }
-
-      const seen = new Set();
-      const unique = [];
-      for (const item of entries) {
-        const key = `${item.classCode}_${item.squadId}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        unique.push(item);
-      }
-      return unique;
+    const { response, text } = await this.requestText('/admin', {
+      headers: {
+        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
     });
+
+    if (!response.ok) {
+      throw new Error(`获取班级页失败 (HTTP ${response.status})`);
+    }
+
+    if (this.isLoginPage(text, response.url)) {
+      throw new Error('登录状态已失效，请重新登录');
+    }
+
+    const map = this.extractClassMapFromHtml(text);
 
     this.classMapCache = map;
     this.classMapCacheAt = Date.now();
@@ -154,6 +371,7 @@ class EducationSystemScraper {
   }
 
   async gotoSquadConsole(classId) {
+    await this.ensurePageReady();
     const { classCode, squadId } = await this.resolveSquadId(classId);
     const url = `${this.baseUrl}/admin/squad_console?id=${squadId}&type=offline`;
     await this.page.goto(url, { waitUntil: 'networkidle2', timeout: 15000 });
@@ -466,160 +684,69 @@ class EducationSystemScraper {
    */
   async login() {
     try {
-      if (!this.browser) {
-        await this.initBrowser();
+      if (!this.username || !this.password) {
+        throw new Error('缺少用户名或密码');
       }
 
-      this.page = await this.browser.newPage();
+      this.cookieJar.clear();
+      this.cookies = [];
+      this.classMapCache = [];
+      this.classMapCacheAt = 0;
+      this.browserSessionReady = false;
 
-      // 导航到登录页面 - 尝试多个可能的URL
-      console.log('🔄 正在导航到登录页面...');
-      const loginUrls = [
-        `${this.baseUrl}/admin/login`,
-        `${this.baseUrl}/login`,
-        `${this.baseUrl}/admin/`,
-        `${this.baseUrl}/`
-      ];
+      console.log('🔄 正在通过HTTP登录教务系统...');
 
-      let loginPageFound = false;
-      for (const url of loginUrls) {
-        try {
-          console.log(`🔄 尝试访问: ${url}`);
-          await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 3500 });
-          const hasLoginForm = await this.page.evaluate(() => {
-            const text = document.body?.innerText || '';
-            return Boolean(
-              document.querySelector('input[type="password"]')
-              || document.querySelector('[name="password"]')
-              || text.includes('密码')
-              || text.toLowerCase().includes('login')
-            );
-          });
+      const { response: loginPageResponse, text: loginPageHtml } = await this.requestText('/admin/auth/login', {
+        headers: {
+          accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      });
 
-          // 检查是否是登录页面（不是404）
-          if (hasLoginForm) {
-            console.log(`✅ 找到登录页面: ${url}`);
-            loginPageFound = true;
-            break;
-          }
-        } catch (e) {
-          console.log(`⚠️ 访问失败: ${url}`);
-          continue;
-        }
+      if (!loginPageResponse.ok) {
+        throw new Error(`加载登录页失败 (HTTP ${loginPageResponse.status})`);
       }
 
-      if (!loginPageFound) {
-        await this.page.screenshot({ path: '/tmp/login_page.png' });
-        const html = await this.page.content();
-        const fs = require('fs');
-        fs.writeFileSync('/tmp/login_page.html', html);
-        throw new Error('无法找到登录页面，已保存页面截图和HTML到 /tmp/ 用于调试');
+      const csrfToken = this.extractLoginToken(loginPageHtml);
+      if (!csrfToken) {
+        throw new Error('无法从登录页提取 CSRF Token');
       }
 
-      console.log('📄 登录页面已加载，尝试查找输入字段...');
+      const xsrfToken = this.getDecodedCookieValue('XSRF-TOKEN');
+      const loginResponse = await this.request('/admin/auth/login', {
+        method: 'POST',
+        headers: {
+          accept: 'application/json, text/javascript, */*; q=0.01',
+          'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          origin: this.baseUrl,
+          referer: `${this.baseUrl}/admin/auth/login`,
+          'x-requested-with': 'XMLHttpRequest',
+          ...(xsrfToken ? { 'x-xsrf-token': xsrfToken } : {}),
+        },
+        body: new URLSearchParams({
+          username: this.username,
+          password: this.password,
+          remember: 'false',
+          _token: csrfToken,
+        }).toString(),
+      });
 
-      // 尝试多种选择器来找到用户名和密码字段
-      let usernameSelector = null;
-      let passwordSelector = null;
-
-      // 尝试常见的选择器
-      const selectors = {
-        username: ['[name="username"]', '[id="username"]', 'input[type="text"]', 'input[placeholder*="用户名"]', 'input[placeholder*="账号"]'],
-        password: ['[name="password"]', '[id="password"]', 'input[type="password"]', 'input[placeholder*="密码"]']
-      };
-
-      for (const selector of selectors.username) {
-        if (await this.page.$(selector)) {
-          usernameSelector = selector;
-          console.log(`✅ 找到用户名字段: ${selector}`);
-          break;
-        }
+      const raw = await loginResponse.text();
+      let result;
+      try {
+        result = JSON.parse(raw);
+      } catch (parseError) {
+        throw new Error(`登录接口返回异常: ${raw.slice(0, 200)}`);
       }
 
-      for (const selector of selectors.password) {
-        if (await this.page.$(selector)) {
-          passwordSelector = selector;
-          console.log(`✅ 找到密码字段: ${selector}`);
-          break;
-        }
+      if (!loginResponse.ok) {
+        throw new Error(result.msg || `登录请求失败 (HTTP ${loginResponse.status})`);
       }
 
-      if (!usernameSelector || !passwordSelector) {
-        // 保存截图和HTML用于调试
-        await this.page.screenshot({ path: '/tmp/login_page.png' });
-        console.log('📸 已保存登录页面截图到 /tmp/login_page.png');
-
-        // 保存HTML内容用于分析
-        const html = await this.page.content();
-        const fs = require('fs');
-        fs.writeFileSync('/tmp/login_page.html', html);
-        console.log('💾 已保存登录页面HTML到 /tmp/login_page.html');
-
-        // 打印所有input字段用于调试
-        const allInputs = await this.page.evaluate(() => {
-          const inputs = Array.from(document.querySelectorAll('input'));
-          return inputs.map(input => ({
-            type: input.type,
-            name: input.name,
-            id: input.id,
-            placeholder: input.placeholder,
-            className: input.className
-          }));
-        });
-        console.log('🔍 所有input字段:', JSON.stringify(allInputs, null, 2));
-
-        throw new Error(`无法找到登录表单字段。用户名: ${usernameSelector}, 密码: ${passwordSelector}`);
+      if (String(result.code) === '0') {
+        throw new Error(result.msg || '登录失败');
       }
 
-      // 输入账号密码 - 使用fill()方法而不是type()
-      console.log('🔄 正在输入账号密码...');
-      console.log(`   用户名: ${this.username}`);
-      console.log(`   密码: ${'*'.repeat(this.password.length)}`);
-
-      const usernameField = await this.page.$(usernameSelector);
-      const passwordField = await this.page.$(passwordSelector);
-
-      if (usernameField) {
-        await usernameField.evaluate(el => el.value = '');
-        await usernameField.type(this.username);
-      } else {
-        throw new Error(`无法获取用户名输入框: ${usernameSelector}`);
-      }
-
-      if (passwordField) {
-        await passwordField.evaluate(el => el.value = '');
-        await passwordField.type(this.password);
-      } else {
-        throw new Error(`无法获取密码输入框: ${passwordSelector}`);
-      }
-
-      // 点击登录按钮
-      console.log('🔄 正在提交登录...');
-      const submitButton = await this.page.$('button[type="submit"]') || await this.page.$('button');
-      if (submitButton) {
-        await submitButton.click();
-        await Promise.race([
-          this.page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 8000 }),
-          this.page.waitForFunction(
-            () => !document.querySelector('input[type="password"]'),
-            { timeout: 8000 }
-          ),
-          this.page.waitForFunction(
-            () => /\/admin(\/|$|\?)/.test(window.location.pathname),
-            { timeout: 8000 }
-          ),
-        ]).catch(() => {
-          console.log('⚠️ 登录后状态检测超时，继续尝试读取会话');
-          return true;
-        });
-        await this.page.waitForNetworkIdle({ idleTime: 500, timeout: 1500 }).catch(() => {});
-      } else {
-        throw new Error('未找到登录按钮');
-      }
-
-      // 保存cookies
-      this.cookies = await this.page.cookies();
-      console.log('✅ 登录成功，已保存cookies');
+      console.log('✅ HTTP登录成功，已保存会话cookies');
 
       return this.cookies;
     } catch (error) {
@@ -633,9 +760,7 @@ class EducationSystemScraper {
    */
   async scrapeStudentList(classId) {
     try {
-      if (!this.page) {
-        throw new Error('浏览器未初始化，请先调用login()');
-      }
+      await this.ensurePageReady();
 
       const url = `${this.baseUrl}/admin/st_manage/index?squad_id=${classId}&squad_name=temp`;
       console.log(`🔄 正在爬取班级${classId}的学生名单...`);
@@ -669,9 +794,7 @@ class EducationSystemScraper {
    */
   async scrapeAttendanceData(classId) {
     try {
-      if (!this.page) {
-        throw new Error('浏览器未初始化，请先调用login()');
-      }
+      await this.ensurePageReady();
 
       const { classCode, squadId } = await this.resolveSquadId(classId);
       const url = `${this.baseUrl}/admin/squad_console?id=${squadId}&type=offline`;
@@ -710,9 +833,7 @@ class EducationSystemScraper {
    */
   async scrapeHomeworkData(classId) {
     try {
-      if (!this.page) {
-        throw new Error('浏览器未初始化，请先调用login()');
-      }
+      await this.ensurePageReady();
 
       const { classCode, squadId } = await this.resolveSquadId(classId);
       const url = `${this.baseUrl}/admin/squad_console?id=${squadId}&type=offline`;
@@ -1131,11 +1252,6 @@ class EducationSystemScraper {
    */
   async scrapeClassList() {
     try {
-      if (!this.page) {
-        throw new Error('浏览器未初始化，请先调用login()');
-      }
-
-      // 优先使用首页卡片中的真实班级映射（班级号 -> squad 内部ID）
       const mapped = await this.getClassMap(false);
       if (mapped.length > 0) {
         const normalized = mapped.map((item) => ({
@@ -1431,6 +1547,9 @@ class EducationSystemScraper {
         await this.browser.close();
         console.log('✅ 浏览器已关闭');
       }
+      this.browser = null;
+      this.page = null;
+      this.browserSessionReady = false;
     } catch (error) {
       console.error('❌ 关闭浏览器失败:', error);
     }
