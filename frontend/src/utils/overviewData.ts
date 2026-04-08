@@ -195,6 +195,7 @@ export function createEmptyContent(
   return {
     classCode,
     week,
+    theme: 'green',
     challengeStartDay: orderedDays[0] ?? '周一',
     weeklyChallenges: createWeeklyChallenges(orderedDays),
     phaseChallenges: createDefaultPhaseChallenges(studentNames, memory ?? undefined),

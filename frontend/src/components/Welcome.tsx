@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { ClassInfo, WelcomeView, DayOfWeek, AppScreen } from '../types';
 import { loadMakeupData } from '../utils/makeupData';
 import { getCurrentWeek, getWeekRange, formatDateShort } from '../utils/weekNumber';
-import { ALL_DAYS, getClassDays, sortClassesBySchedule, getResolvedSchedule } from '../utils/classSchedule';
+import { ALL_DAYS, getClassDays, sortClassesBySchedule, getResolvedSchedule, getClassTimeOnDay } from '../utils/classSchedule';
 import { getStudentCount } from '../utils/classProfiles';
 import ScheduleEditor from './ScheduleEditor';
 import './Welcome.css';
@@ -19,6 +19,7 @@ export default function Welcome({ teacherName, classes, onSelectClass, onLogout,
   const week = getCurrentWeek();
   const { start, end } = getWeekRange(week);
   const [showGuide, setShowGuide] = useState(false);
+  const [guideAnchor, setGuideAnchor] = useState<'top' | 'batch-import'>('top');
   const [showScheduleEditor, setShowScheduleEditor] = useState(false);
   const [scheduleVersion, setScheduleVersion] = useState(0);
   const [view, setView] = useState<WelcomeView>('byClass');
@@ -32,6 +33,12 @@ export default function Welcome({ teacherName, classes, onSelectClass, onLogout,
 
   const sortedClasses = sortClassesBySchedule(classes);
   const resolvedSchedule = getResolvedSchedule(classes.map((item) => item.name));
+  const guideSrc = showGuide ? `/guide.html${guideAnchor === 'batch-import' ? '#batch-import' : ''}` : '';
+
+  function openGuide(anchor: 'top' | 'batch-import' = 'top') {
+    setGuideAnchor(anchor);
+    setShowGuide(true);
+  }
 
   // Build day-grouped schedule for "by date" view
   function buildDayView(): { day: DayOfWeek; classes: ClassInfo[] }[] {
@@ -158,6 +165,7 @@ export default function Welcome({ teacherName, classes, onSelectClass, onLogout,
                         <div className="day-group-classes">
                           {dayClasses.map((cls) => {
                             const count = getStudentCount(cls.name);
+                            const time = getClassTimeOnDay(cls.name, day);
                             return (
                               <button
                                 key={cls.id}
@@ -165,6 +173,7 @@ export default function Welcome({ teacherName, classes, onSelectClass, onLogout,
                                 onClick={() => onSelectClass(cls)}
                               >
                                 <span className="day-class-code">{cls.name}</span>
+                                {time && <span className="day-class-time">{time}</span>}
                                 {count > 0 && <span className="day-class-count">{count}人</span>}
                                 <span className="day-class-action">→</span>
                               </button>
@@ -200,19 +209,44 @@ export default function Welcome({ teacherName, classes, onSelectClass, onLogout,
         </div>
 
         <div className="guide-panel card">
-          <button className="guide-toggle" onClick={() => setShowGuide((v) => !v)}>
+          <button
+            className="guide-toggle"
+            onClick={() => {
+              setGuideAnchor('top');
+              setShowGuide((v) => !v);
+            }}
+          >
             <span className="guide-toggle-icon">📖</span>
             <span>使用说明</span>
             <span className="guide-toggle-arrow">{showGuide ? '▲' : '▼'}</span>
           </button>
           {showGuide && (
             <iframe
-              src="/guide.html"
+              src={guideSrc}
               className="guide-frame"
               title="使用说明"
-              sandbox="allow-same-origin"
+              sandbox="allow-same-origin allow-scripts allow-forms allow-top-navigation-by-user-activation"
             />
           )}
+        </div>
+
+        <div className="batch-import-panel card">
+          <div className="batch-import-copy">
+            <div className="batch-import-kicker">批量导入</div>
+            <h2>导入多个班级座位表</h2>
+            <p>
+              先把多个班级的座位表文件收进来，再把识别后的文字贴进去。
+              我会先帮你把班级号和名单提取出来，写进本机草稿，后面还能继续改。
+            </p>
+          </div>
+          <div className="batch-import-actions">
+            <button className="btn btn-primary btn-sm" onClick={() => openGuide('batch-import')}>
+              打开导入区
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => openGuide('top')}>
+              看最新说明
+            </button>
+          </div>
         </div>
       </div>
     </div>

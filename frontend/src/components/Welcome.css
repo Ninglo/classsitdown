@@ -1,8 +1,8 @@
 .welcome-wrap {
-  max-width: 780px;
+  max-width: 980px;
   margin: 0 auto;
-  padding: 32px 24px 60px;
-  min-height: 100vh;
+  padding: 28px 24px 64px;
+  min-height: 100dvh;
 }
 
 .welcome-header {
@@ -54,7 +54,7 @@
 .welcome-body {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 22px;
 }
 
 .section-title {
@@ -234,6 +234,15 @@
   min-width: 60px;
 }
 
+.day-class-time {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--green-dark);
+  background: rgba(123,168,98,0.12);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
 .day-class-count {
   font-size: 12px;
   color: var(--gray-500);
@@ -364,6 +373,7 @@
 .guide-panel {
   padding: 0;
   overflow: hidden;
+  border-radius: 18px;
 }
 
 .guide-toggle {
@@ -393,10 +403,67 @@
 
 .guide-frame {
   width: 100%;
-  height: 620px;
+  height: 760px;
   border: none;
   border-top: 1px solid var(--gray-200);
   display: block;
+}
+
+.batch-import-panel {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 22px;
+  background: linear-gradient(180deg, rgba(251,250,246,0.96), rgba(242,246,236,0.96));
+  border: 1.5px solid rgba(123,168,98,0.18);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+}
+
+.batch-import-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.batch-import-kicker {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--green);
+  font-weight: 700;
+}
+
+.batch-import-copy h2 {
+  font-size: 20px;
+  line-height: 1.2;
+  color: var(--gray-900);
+  margin: 0;
+}
+
+.batch-import-copy p {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--gray-600);
+  max-width: 58ch;
+}
+
+.batch-import-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+  min-width: 160px;
+}
+
+.batch-import-actions .btn {
+  width: 100%;
+}
+
+.batch-import-actions .btn.btn-ghost {
+  background: rgba(255,255,255,0.7);
 }
 
 /* ── Mobile ── */
@@ -452,4 +519,13 @@
   .welcome-hint { display: none; }
 
   .guide-panel { display: none; }
+
+  .batch-import-panel {
+    flex-direction: column;
+  }
+
+  .batch-import-actions {
+    width: 100%;
+    min-width: 0;
+  }
 }

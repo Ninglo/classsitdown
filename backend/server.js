@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const crypto = require('crypto');
+const https = require('https');
 const EducationSystemScraper = require('./scraper/scraper');
 
 const app = express();
@@ -172,6 +173,93 @@ app.post('/api/scraper/submit-minipin', async (req, res) => {
     res.json({ status: 'success', ...result });
   } catch (error) {
     console.error('❌ 发放奖励失败:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── AI 日报生成 ──────────────────────────────────────────────────────────────
+function callAnthropicAPI(messages, systemPrompt) {
+  return new Promise((resolve, reject) => {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      reject(new Error('ANTHROPIC_API_KEY 未配置，请在后端环境中设置该变量'));
+      return;
+    }
+
+    const body = JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages,
+    });
+
+    const req = https.request(
+      {
+        hostname: 'api.anthropic.com',
+        path: '/v1/messages',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.error) {
+              reject(new Error(parsed.error.message || JSON.stringify(parsed.error)));
+            } else {
+              resolve(parsed.content?.[0]?.text ?? '');
+            }
+          } catch (e) {
+            reject(new Error('API 响应解析失败: ' + data.slice(0, 200)));
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+app.post('/api/ai/daily-report', async (req, res) => {
+  try {
+    const { classCode, tables, note } = req.body || {};
+    if (!classCode) return res.status(400).json({ error: '缺少班级代码' });
+    if (!Array.isArray(tables) || tables.length === 0) {
+      return res.status(400).json({ error: '请至少上传一个数据表格' });
+    }
+
+    const tableText = tables
+      .map((t) => `【${t.name}】\n${t.text}`)
+      .join('\n\n');
+
+    const systemPrompt = `你是一位英语培训机构的班主任助手，负责根据课程数据生成班级日报。
+日报应简洁、清晰，适合发给家长或内部使用。
+输出格式为 Markdown，使用中文。
+日报包含以下内容（根据数据实际情况灵活调整）：
+1. 本次课程总体情况（出席率、上课状态）
+2. 积分/表现亮点（表现好的学生）
+3. 需要关注的情况（如有缺席、积分异常等）
+4. 老师寄语或本课重点
+语气积极、专业，避免批评性语言。`;
+
+    const userContent = `班级：${classCode}\n\n课程数据如下：\n\n${tableText}${note ? `\n\n老师补充说明：${note}` : ''}`;
+
+    const report = await callAnthropicAPI(
+      [{ role: 'user', content: userContent }],
+      systemPrompt
+    );
+
+    res.json({ status: 'success', report });
+  } catch (error) {
+    console.error('❌ 日报生成失败:', error.message);
     res.status(500).json({ error: error.message });
   }
 });

@@ -10,7 +10,7 @@ import type {
   OverviewContent,
   PhaseChallengeRow,
 } from '../types/overview';
-import { getClassProfile } from '../utils/classProfiles';
+import { getResolvedStudents, importStudentNames } from '../utils/classProfiles';
 import { ALL_DAYS, getOrderedChallengeDays } from '../utils/classSchedule';
 import {
   addCommunicationRecord,
@@ -44,6 +44,15 @@ async function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+async function fileToText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(file);
+  });
+}
+
 function formatHistoryDate(timestamp: number): string {
   const date = new Date(timestamp);
   return `${date.getMonth() + 1}/${date.getDate()}`;
@@ -53,6 +62,54 @@ function orderDaysFromStart(startDay: string): string[] {
   const startIndex = ALL_DAYS.indexOf(startDay as typeof ALL_DAYS[number]);
   if (startIndex === -1) return [...ALL_DAYS];
   return [...ALL_DAYS.slice(startIndex), ...ALL_DAYS.slice(0, startIndex)];
+}
+
+function hasWeeklyChallenges(content: OverviewContent): boolean {
+  return content.weeklyChallenges.some((item) => item.task.trim());
+}
+
+function hasPhaseChallenges(content: OverviewContent): boolean {
+  return content.phaseChallenges.some((item) =>
+    item.selectedStudents.length > 0 || item.challengeContent.trim() || item.method.trim(),
+  );
+}
+
+function hasChallengeItems(content: OverviewContent): boolean {
+  return content.challengeItems.some((item) =>
+    item.title.trim() || item.detail.trim() || item.media.length > 0,
+  );
+}
+
+function hasListeningMaterials(content: OverviewContent): boolean {
+  return content.listeningMaterials.some((item) => item.english.trim() || item.chinese.trim());
+}
+
+function hasCommunicationPlan(content: OverviewContent): boolean {
+  return Boolean(
+    content.communicationPlan.selectedStudents.length ||
+    content.communicationPlan.teacherName.trim() ||
+    content.communicationPlan.scheduleText.trim() ||
+    content.communicationPlan.note.trim(),
+  );
+}
+
+function hasCustomBlockContent(block: CustomBlock): boolean {
+  if (block.mode === 'text') return Boolean(block.text.trim());
+  if (block.mode === 'image') return block.media.length > 0;
+  return block.table.rows.some((row) => row.some((cell) => cell.trim()));
+}
+
+function parseStudentNames(raw: string): string[] {
+  return [...new Set(
+    raw
+      .split(/[\n,，、;；]+/)
+      .map((item) => item.replace(/^[\d.、)\]-]+\s*/, '').trim())
+      .filter(Boolean),
+  )];
+}
+
+function sortStudentNames(names: string[]): string[] {
+  return [...names].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
 }
 
 function StudentPicker({
@@ -70,7 +127,7 @@ function StudentPicker({
 
   return (
     <div className="ov-student-grid">
-      {studentNames.map((name) => (
+      {sortStudentNames(studentNames).map((name) => (
         <label key={name} className={`ov-student-chip${selected.includes(name) ? ' active' : ''}`}>
           <input
             type="checkbox"
@@ -91,10 +148,10 @@ function MediaEditor({
   items: MediaItem[];
   onChange: (items: MediaItem[]) => void;
 }) {
-  async function handleUpload(files: FileList | null) {
-    if (!files || files.length === 0) return;
+  async function appendFiles(files: File[]) {
+    if (files.length === 0) return;
     const uploaded: MediaItem[] = [];
-    for (const file of Array.from(files)) {
+    for (const file of files) {
       const src = await fileToDataUrl(file);
       uploaded.push({
         id: `media_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -105,6 +162,11 @@ function MediaEditor({
       });
     }
     onChange([...items, ...uploaded]);
+  }
+
+  async function handleUpload(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    await appendFiles(Array.from(files));
   }
 
   function updateItem(id: string, updater: (item: MediaItem) => MediaItem) {
@@ -139,7 +201,15 @@ function MediaEditor({
   }
 
   return (
-    <div className="ov-media-editor">
+    <div
+      className="ov-media-editor"
+      onPaste={(event) => {
+        const pastedFiles = Array.from(event.clipboardData?.files ?? []).filter((file) => file.type.startsWith('image/'));
+        if (pastedFiles.length === 0) return;
+        event.preventDefault();
+        void appendFiles(pastedFiles);
+      }}
+    >
       <label className="btn btn-ghost btn-sm ov-upload-btn">
         上传图片
         <input
@@ -155,6 +225,7 @@ function MediaEditor({
       </label>
 
       {items.length === 0 && <p className="ov-empty-hint">支持多图上传，也可以给图片加框选和文字标注。</p>}
+      <p className="ov-empty-hint">也支持直接 `Ctrl+V` / 粘贴图片。</p>
 
       {items.map((item) => (
         <div key={item.id} className="ov-media-card">
@@ -317,10 +388,8 @@ function CustomTableEditor({
 
 export default function OverviewApp({ classInfo, onBack }: Props) {
   const classCode = classInfo.name;
-  const profile = useMemo(() => getClassProfile(classCode), [classCode]);
-  const studentNames = useMemo(
-    () => profile?.students.map((student) => student.chineseName) ?? [],
-    [profile],
+  const [studentNames, setStudentNames] = useState<string[]>(() =>
+    sortStudentNames(getResolvedStudents(classCode).map((student) => student.chineseName)),
   );
   const orderedDays = useMemo(() => getOrderedChallengeDays(classCode), [classCode]);
   const [week, setWeek] = useState(() => getCurrentWeek());
@@ -331,7 +400,12 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
   const [notice, setNotice] = useState('');
   const [listeningBatchInput, setListeningBatchInput] = useState('');
   const [translating, setTranslating] = useState(false);
+  const [studentImportInput, setStudentImportInput] = useState('');
   const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setStudentNames(sortStudentNames(getResolvedStudents(classCode).map((student) => student.chineseName)));
+  }, [classCode]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -396,8 +470,72 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
     }
   }
 
+  function applyStudentNames(names: string[]) {
+    const nextNames = sortStudentNames(importStudentNames(classCode, names).map((student) => student.chineseName));
+    setStudentNames(nextNames);
+    setNotice(`已导入 ${nextNames.length} 位学生。`);
+  }
+
+  async function handleStudentFileImport(file: File | null) {
+    if (!file) return;
+    const lowerName = file.name.toLowerCase();
+
+    if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
+      const buffer = await file.arrayBuffer();
+      const { read, utils } = await import('xlsx');
+      const workbook = read(buffer, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      const rows = utils.sheet_to_json<(string | number | null)[]>(workbook.Sheets[firstSheetName], {
+        header: 1,
+      });
+      const names = rows
+        .flatMap((row) => row.map((cell) => String(cell ?? '').trim()))
+        .filter(Boolean);
+      applyStudentNames(names);
+      return;
+    }
+
+    const text = await fileToText(file);
+    applyStudentNames(parseStudentNames(text));
+  }
+
+  function handleManualStudentImport() {
+    const names = parseStudentNames(studentImportInput);
+    if (names.length === 0) {
+      setNotice('先粘贴学生名单。');
+      return;
+    }
+    applyStudentNames(names);
+    setStudentImportInput('');
+  }
+
   function toggleName(list: string[], name: string): string[] {
     return list.includes(name) ? list.filter((item) => item !== name) : [...list, name];
+  }
+
+  function togglePhaseStudent(rowId: string, name: string) {
+    updateContent((current) => {
+      const currentRow = current.phaseChallenges.find((row) => row.id === rowId);
+      const removing = currentRow?.selectedStudents.includes(name);
+
+      return {
+        ...current,
+        phaseChallenges: current.phaseChallenges.map((row) => {
+          if (row.id === rowId) {
+            return {
+              ...row,
+              selectedStudents: removing
+                ? row.selectedStudents.filter((item) => item !== name)
+                : [...row.selectedStudents.filter((item) => item !== name), name],
+            };
+          }
+
+          return removing
+            ? row
+            : { ...row, selectedStudents: row.selectedStudents.filter((item) => item !== name) };
+        }),
+      };
+    });
   }
 
   async function handleExport() {
@@ -449,6 +587,12 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
     () => orderedChallengeDays.map((day) => content.weeklyChallenges.find((item) => item.day === day) ?? { day, task: '' }),
     [content.weeklyChallenges, orderedChallengeDays],
   );
+  const showWeeklyChallenges = hasWeeklyChallenges(content);
+  const showPhaseChallenges = hasPhaseChallenges(content);
+  const showChallengeItems = hasChallengeItems(content);
+  const showListeningMaterials = hasListeningMaterials(content);
+  const showCommunicationSection = hasCommunicationPlan(content);
+  const visibleCustomBlocks = content.customBlocks.filter(hasCustomBlockContent);
 
   return (
     <div className="ov-shell fade-in">
@@ -474,6 +618,47 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
 
       <div className="ov-layout">
         <div className="ov-editor card">
+          <section className="ov-editor-section ov-editor-section-compact">
+            <div className="ov-section-head">
+              <h3>学生名单</h3>
+              <p>{studentNames.length > 0 ? `已读取 ${studentNames.length} 人` : '当前还没有可用名单'}</p>
+            </div>
+            {studentNames.length > 0 ? (
+              <div className="ov-student-grid">
+                {studentNames.map((name) => (
+                  <span key={name} className="ov-student-chip ov-student-chip-static">{name}</span>
+                ))}
+              </div>
+            ) : (
+              <div className="ov-empty-state-inline">
+                <p>没有读到班级名单。我会优先从座位表回收；如果这边还没有，再在下面导入一次。</p>
+              </div>
+            )}
+            <div className="ov-student-import">
+              <textarea
+                rows={3}
+                placeholder="粘贴学生名单，支持换行、逗号、分号分隔"
+                value={studentImportInput}
+                onChange={(event) => setStudentImportInput(event.target.value)}
+              />
+              <div className="ov-inline-actions">
+                <button className="btn btn-ghost btn-sm" onClick={handleManualStudentImport}>导入粘贴名单</button>
+                <label className="btn btn-ghost btn-sm ov-upload-btn">
+                  上传名单文件
+                  <input
+                    type="file"
+                    accept=".txt,.csv,.xlsx,.xls"
+                    hidden
+                    onChange={(event) => {
+                      void handleStudentFileImport(event.target.files?.[0] ?? null);
+                      event.target.value = '';
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+          </section>
+
           <section className="ov-editor-section">
             <div className="ov-section-head">
               <h3>① 本周挑战</h3>
@@ -525,59 +710,53 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
               <h3>② 分阶段挑战</h3>
               <p>学生勾选、挑战内容、达成途径都会自动记住，后面还能继续改。</p>
             </div>
-            <div className="ov-phase-table">
-              <div className="ov-phase-header">阶段</div>
-              <div className="ov-phase-header">学生名单</div>
-              <div className="ov-phase-header">具体挑战内容</div>
-              <div className="ov-phase-header">达成途径</div>
+            <div className="ov-phase-editor-list">
               {content.phaseChallenges.map((row) => (
-                <Fragment key={row.id}>
-                  <div key={`${row.id}_label`} className="ov-phase-label">{row.label}</div>
-                  <div key={`${row.id}_students`} className="ov-phase-cell">
-                    <StudentPicker
-                      studentNames={studentNames}
-                      selected={row.selectedStudents}
-                      onToggle={(name) =>
-                        updateContent((current) => ({
-                          ...current,
-                          phaseChallenges: current.phaseChallenges.map((phase) =>
-                            phase.id === row.id ? { ...phase, selectedStudents: toggleName(phase.selectedStudents, name) } : phase,
-                          ),
-                        }))
-                      }
-                    />
+                <section key={row.id} className="ov-phase-editor-card">
+                  <div className="ov-phase-editor-title">{row.label}</div>
+                  <div className="ov-phase-editor-grid">
+                    <div className="ov-phase-cell">
+                      <div className="ov-phase-subtitle">学生名单</div>
+                      <StudentPicker
+                        studentNames={studentNames}
+                        selected={row.selectedStudents}
+                        onToggle={(name) => togglePhaseStudent(row.id, name)}
+                      />
+                    </div>
+                    <div className="ov-phase-cell">
+                      <div className="ov-phase-subtitle">具体挑战内容</div>
+                      <textarea
+                        rows={5}
+                        value={row.challengeContent}
+                        placeholder="比如：固定跟读、句型复述、单词滚动复盘"
+                        onChange={(event) =>
+                          updateContent((current) => ({
+                            ...current,
+                            phaseChallenges: current.phaseChallenges.map((phase) =>
+                              phase.id === row.id ? { ...phase, challengeContent: event.target.value } : phase,
+                            ),
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="ov-phase-cell">
+                      <div className="ov-phase-subtitle">达成途径</div>
+                      <textarea
+                        rows={5}
+                        value={row.method}
+                        placeholder="比如：每天 10 分钟 + 课堂抽查"
+                        onChange={(event) =>
+                          updateContent((current) => ({
+                            ...current,
+                            phaseChallenges: current.phaseChallenges.map((phase) =>
+                              phase.id === row.id ? { ...phase, method: event.target.value } : phase,
+                            ),
+                          }))
+                        }
+                      />
+                    </div>
                   </div>
-                  <div key={`${row.id}_challenge`} className="ov-phase-cell">
-                    <textarea
-                      rows={4}
-                      value={row.challengeContent}
-                      placeholder="比如：固定跟读、句型复述、单词滚动复盘"
-                      onChange={(event) =>
-                        updateContent((current) => ({
-                          ...current,
-                          phaseChallenges: current.phaseChallenges.map((phase) =>
-                            phase.id === row.id ? { ...phase, challengeContent: event.target.value } : phase,
-                          ),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div key={`${row.id}_method`} className="ov-phase-cell">
-                    <textarea
-                      rows={4}
-                      value={row.method}
-                      placeholder="比如：每天 10 分钟 + 课堂抽查"
-                      onChange={(event) =>
-                        updateContent((current) => ({
-                          ...current,
-                          phaseChallenges: current.phaseChallenges.map((phase) =>
-                            phase.id === row.id ? { ...phase, method: event.target.value } : phase,
-                          ),
-                        }))
-                      }
-                    />
-                  </div>
-                </Fragment>
+                </section>
               ))}
             </div>
           </section>
@@ -898,104 +1077,114 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
         <div className="ov-preview">
           <div className="ov-preview-paper" ref={cardRef}>
             <header className="ov-paper-header">
-              <div>
+              <div className="ov-paper-title-box">
                 <p className="ov-paper-eyebrow">课程概览</p>
                 <h2>{classCode}</h2>
+                <p className="ov-paper-date-range">{formatDateShort(weekRange.start)} - {formatDateShort(weekRange.end)}</p>
               </div>
               <div className="ov-paper-week">
                 <strong>Week {week}</strong>
-                <span>{formatDateShort(weekRange.start)} - {formatDateShort(weekRange.end)}</span>
+                <span>{weekRange.start.getMonth() + 1}/{weekRange.start.getDate()} - {weekRange.end.getMonth() + 1}/{weekRange.end.getDate()}</span>
               </div>
             </header>
 
-            <section className="ov-paper-section">
-              <div className="ov-paper-title">① 本周挑战</div>
-              <div className="ov-paper-week-axis">
-                <span>第一天：{content.challengeStartDay || orderedDays[0]}</span>
-              </div>
-              <div className="ov-paper-week-table" style={{ gridTemplateColumns: `repeat(${weeklyChallengeRows.length}, minmax(180px, 1fr))` }}>
-                {weeklyChallengeRows.map((item) => (
-                  <div key={`${item.day}_preview_head`} className="ov-paper-week-head">{item.day}</div>
-                ))}
-                {weeklyChallengeRows.map((item) => (
-                  <div key={`${item.day}_preview_body`} className="ov-paper-week-cell">{item.task || '待补充'}</div>
-                ))}
-              </div>
-            </section>
+            {showWeeklyChallenges && (
+              <section className="ov-paper-section">
+                <div className="ov-paper-title">① 本周挑战</div>
+                <div className="ov-paper-week-table" style={{ gridTemplateColumns: `repeat(${weeklyChallengeRows.length}, minmax(180px, 1fr))` }}>
+                  {weeklyChallengeRows.map((item) => (
+                    <div key={`${item.day}_preview_head`} className="ov-paper-week-head">{item.day}</div>
+                  ))}
+                  {weeklyChallengeRows.map((item) => (
+                    <div key={`${item.day}_preview_body`} className="ov-paper-week-cell">{item.task}</div>
+                  ))}
+                </div>
+              </section>
+            )}
 
-            <section className="ov-paper-section">
-              <div className="ov-paper-title">② 分阶段挑战</div>
-              <div className="ov-paper-phase-table">
-                <div className="ov-paper-phase-head">阶段</div>
-                <div className="ov-paper-phase-head">学生名单</div>
-                <div className="ov-paper-phase-head">具体挑战内容</div>
-                <div className="ov-paper-phase-head">达成途径</div>
-                {content.phaseChallenges.map((row: PhaseChallengeRow) => (
-                  <Fragment key={row.id}>
-                    <div key={`${row.id}_stage`} className="ov-paper-phase-stage">{row.label}</div>
-                    <div key={`${row.id}_students`} className="ov-paper-phase-cell">{row.selectedStudents.join('、') || '待勾选'}</div>
-                    <div key={`${row.id}_content`} className="ov-paper-phase-cell">{row.challengeContent || '待补充'}</div>
-                    <div key={`${row.id}_method`} className="ov-paper-phase-cell">{row.method || '待补充'}</div>
-                  </Fragment>
-                ))}
-              </div>
-            </section>
+            {showPhaseChallenges && (
+              <section className="ov-paper-section">
+                <div className="ov-paper-title">② 分阶段挑战</div>
+                <div className="ov-paper-phase-table">
+                  <div className="ov-paper-phase-head">阶段</div>
+                  <div className="ov-paper-phase-head">学生名单</div>
+                  <div className="ov-paper-phase-head">具体挑战内容</div>
+                  <div className="ov-paper-phase-head">达成途径</div>
+                  {content.phaseChallenges
+                    .filter((row) => row.selectedStudents.length > 0 || row.challengeContent.trim() || row.method.trim())
+                    .map((row: PhaseChallengeRow) => (
+                      <Fragment key={row.id}>
+                        <div key={`${row.id}_stage`} className="ov-paper-phase-stage">{row.label}</div>
+                        <div key={`${row.id}_students`} className="ov-paper-phase-cell">{row.selectedStudents.join('、')}</div>
+                        <div key={`${row.id}_content`} className="ov-paper-phase-cell">{row.challengeContent}</div>
+                        <div key={`${row.id}_method`} className="ov-paper-phase-cell">{row.method}</div>
+                      </Fragment>
+                    ))}
+                </div>
+              </section>
+            )}
 
-            <section className="ov-paper-section">
-              <div className="ov-paper-title">③ 本周挑战内容</div>
-              <div className="ov-paper-stack">
-                {content.challengeItems.length === 0 && <p className="ov-paper-empty">暂未填写挑战内容</p>}
-                {content.challengeItems.map((item: ChallengeItem, index) => (
-                  <article key={item.id} className="ov-paper-task">
-                    <div className="ov-paper-task-index">挑战 {index + 1}</div>
-                    <h4>{item.title || '未命名挑战'}</h4>
-                    <p>{item.detail || '待补充'}</p>
-                    {item.media.length > 0 && (
-                      <div className="ov-paper-media-grid">
-                        {item.media.map((media) => (
-                          <figure key={media.id} className="ov-paper-figure">
-                            <img src={media.src} alt={media.name || item.title || '挑战图片'} />
-                            {media.caption && <figcaption>{media.caption}</figcaption>}
-                          </figure>
-                        ))}
+            {showChallengeItems && (
+              <section className="ov-paper-section">
+                <div className="ov-paper-title">③ 本周挑战内容</div>
+                <div className="ov-paper-stack">
+                  {content.challengeItems
+                    .filter((item) => item.title.trim() || item.detail.trim() || item.media.length > 0)
+                    .map((item: ChallengeItem, index) => (
+                      <article key={item.id} className="ov-paper-task">
+                        {(item.title || item.detail) && <div className="ov-paper-task-index">挑战 {index + 1}</div>}
+                        {item.title && <h4>{item.title}</h4>}
+                        {item.detail && <p>{item.detail}</p>}
+                        {item.media.length > 0 && (
+                          <div className="ov-paper-media-grid">
+                            {item.media.map((media) => (
+                              <figure key={media.id} className="ov-paper-figure">
+                                <img src={media.src} alt={media.name || item.title || '挑战图片'} />
+                                {media.caption && <figcaption>{media.caption}</figcaption>}
+                              </figure>
+                            ))}
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                </div>
+              </section>
+            )}
+
+            {showListeningMaterials && (
+              <section className="ov-paper-section">
+                <div className="ov-paper-title">④ 下周听读语料</div>
+                <div className={`ov-paper-listening ov-paper-listening-${content.listeningFont}`}>
+                  {content.listeningMaterials
+                    .filter((item: ListeningMaterialItem) => item.english.trim() || item.chinese.trim())
+                    .map((item: ListeningMaterialItem) => (
+                      <div key={item.id} className="ov-paper-listening-row">
+                        <span className="ov-paper-word">{item.english}</span>
+                        <span className="ov-paper-meaning">{item.chinese}</span>
                       </div>
-                    )}
-                  </article>
-                ))}
-              </div>
-            </section>
+                    ))}
+                </div>
+              </section>
+            )}
 
-            <section className="ov-paper-section">
-              <div className="ov-paper-title">④ 下周听读语料</div>
-              <div className={`ov-paper-listening ov-paper-listening-${content.listeningFont}`}>
-                {content.listeningMaterials.length === 0 && <p className="ov-paper-empty">暂未填写语料</p>}
-                {content.listeningMaterials.map((item: ListeningMaterialItem) => (
-                  <div key={item.id} className="ov-paper-listening-row">
-                    <span className="ov-paper-word">{item.english || 'English'}</span>
-                    <span className="ov-paper-meaning">{item.chinese || '待补充中文释义'}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
+            {showCommunicationSection && (
+              <section className="ov-paper-section">
+                <div className="ov-paper-title">⑤ 交流名单</div>
+                <div className="ov-paper-comm-meta">
+                  {content.communicationPlan.teacherName && <span>交流人：{content.communicationPlan.teacherName}</span>}
+                  {content.communicationPlan.scheduleText && <span>时间地点：{content.communicationPlan.scheduleText}</span>}
+                </div>
+                {content.communicationPlan.selectedStudents.length > 0 && (
+                  <div className="ov-paper-comm-students">{content.communicationPlan.selectedStudents.join('、')}</div>
+                )}
+                {content.communicationPlan.note && <p className="ov-paper-comm-note">{content.communicationPlan.note}</p>}
+              </section>
+            )}
 
-            <section className="ov-paper-section">
-              <div className="ov-paper-title">⑤ 交流名单</div>
-              <div className="ov-paper-comm-meta">
-                <span>交流人：{content.communicationPlan.teacherName || '待填写'}</span>
-                <span>时间地点：{content.communicationPlan.scheduleText || '待填写'}</span>
-              </div>
-              <div className="ov-paper-comm-students">
-                {content.communicationPlan.selectedStudents.length > 0
-                  ? content.communicationPlan.selectedStudents.join('、')
-                  : '待勾选交流学生'}
-              </div>
-              {content.communicationPlan.note && <p className="ov-paper-comm-note">{content.communicationPlan.note}</p>}
-            </section>
-
-            {content.customBlocks.map((block) => (
+            {visibleCustomBlocks.map((block) => (
               <section key={block.id} className="ov-paper-section">
                 <div className="ov-paper-title">⑥ {block.title}</div>
-                {block.mode === 'text' && <p className="ov-paper-paragraph">{block.text || '待补充'}</p>}
+                {block.mode === 'text' && <p className="ov-paper-paragraph">{block.text}</p>}
                 {block.mode === 'table' && (
                   <div className="ov-paper-custom-table" style={{ gridTemplateColumns: `repeat(${block.table.columns.length}, minmax(0, 1fr))` }}>
                     {block.table.columns.map((column, index) => (
@@ -1016,7 +1205,6 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
                         {media.caption && <figcaption>{media.caption}</figcaption>}
                       </figure>
                     ))}
-                    {block.media.length === 0 && <p className="ov-paper-empty">暂未上传图片</p>}
                   </div>
                 )}
               </section>

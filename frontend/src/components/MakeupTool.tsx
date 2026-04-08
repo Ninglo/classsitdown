@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { MakeupDataset, MakeupOccurrence, MakeupClassMeta, ScoredCandidate, StageKey } from '../types/makeup';
 import { ALL_STAGES } from '../types/makeup';
 import { loadMultiStageStore, saveStageData, clearStageData, loadStageData, getLoadedStages, parseJsonImport, parseXlsxImport } from '../utils/makeupData';
-import { calcScore } from '../utils/makeupScoring';
+import { calcScore, evaluateLessonMatch } from '../utils/makeupScoring';
 import { generateParentMessage, generateTeacherMessage } from '../utils/makeupMessages';
 import { initWeekDetection, parseQuickInput, getSortedWeekLabels } from '../utils/makeupParser';
 import './MakeupTool.css';
@@ -97,7 +97,7 @@ export default function MakeupTool({ onBack }: Props) {
 
     for (const candidate of dataset.occurrences) {
       if (candidate.class_code === originOcc.class_code) continue;
-      if (candidate.lesson !== originOcc.lesson) continue;
+      if (!evaluateLessonMatch(originOcc, candidate).matched) continue;
       const slotKey = `${candidate.day}|${candidate.time}`;
       if (!slotIndex.has(slotKey)) continue;
       const scored = calcScore(originOcc, candidate, slotIndex.get(slotKey)!, classesByCode);

@@ -184,7 +184,9 @@ function loadSeatingSchedule(): WeeklySchedule {
       schedule[day] = [];
     }
 
-    for (const [classCode, config] of Object.entries(parsed ?? {})) {
+    for (const [rawCode, config] of Object.entries(parsed ?? {})) {
+      // Normalize to uppercase to match scraper output
+      const classCode = rawCode.toUpperCase();
       const inferredDays = [
         ...(config?.weekday?.locationInfo?.weekday ? extractDaysFromClassTime(config.weekday.locationInfo.weekday) : []),
         ...extractDaysFromClassTime(
@@ -219,7 +221,8 @@ function loadSeatingDetails(): ClassScheduleDetail[] {
 
     const details: ClassScheduleDetail[] = [];
 
-    for (const [classCode, config] of Object.entries(parsed ?? {})) {
+    for (const [rawCode, config] of Object.entries(parsed ?? {})) {
+      const classCode = rawCode.toUpperCase();
       for (const slot of [config?.weekday?.locationInfo, config?.weekend?.locationInfo]) {
         const rawText = [slot?.weekday ?? '', slot?.time ?? ''].join(' ');
         const days = extractDaysFromClassTime(rawText);
@@ -334,6 +337,13 @@ export function getResolvedSchedule(classCodes: string[]): WeeklySchedule {
 export function getClassDays(classCode: string): DayOfWeek[] {
   const sched = getResolvedSchedule([classCode]);
   return ALL_DAYS.filter((d) => (sched[d] ?? []).includes(classCode));
+}
+
+/** Returns the start time string (e.g. "18:20") for a class on a given day, or '' if unknown. */
+export function getClassTimeOnDay(classCode: string, day: DayOfWeek): string {
+  const details = getClassScheduleDetails(classCode);
+  const match = details.find((d) => d.day === day && d.time);
+  return match?.time ?? '';
 }
 
 export function sortClassesBySchedule(classes: ClassInfo[]): ClassInfo[] {

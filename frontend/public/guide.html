@@ -5,6 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Super Amber · 使用说明</title>
   <style>
+    :root {
+      --bg: #f5f7f1;
+      --bg-2: #edf3e4;
+      --panel: rgba(255,255,255,0.88);
+      --panel-strong: #ffffff;
+      --text: #273228;
+      --muted: #667266;
+      --green: #6d9560;
+      --green-deep: #3d5e32;
+      --line: rgba(123,168,98,0.18);
+      --line-strong: rgba(123,168,98,0.32);
+      --shadow: 0 14px 36px rgba(82,101,68,0.09);
+      --radius: 18px;
+      --radius-sm: 12px;
+    }
+
     @font-face {
       font-family: 'SmileySans';
       src: url('/fonts/SmileySans-Oblique.ttf.woff2') format('woff2');
@@ -12,251 +28,964 @@
       font-style: normal;
       font-display: swap;
     }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
     body {
       font-family: 'SmileySans', -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif;
-      background: #f7faf2;
-      color: #2d3a2e;
-      line-height: 1.7;
+      background:
+        radial-gradient(circle at top left, rgba(123,168,98,0.10), transparent 26%),
+        radial-gradient(circle at top right, rgba(80,120,170,0.07), transparent 22%),
+        linear-gradient(180deg, #fafcf7 0%, var(--bg) 42%, #eef4e7 100%);
+      color: var(--text);
+      line-height: 1.65;
+      text-rendering: optimizeLegibility;
     }
+    a { color: inherit; text-decoration: none; }
+    button, input, textarea, select { font: inherit; }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px 20px 60px;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 12px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 14px;
+      margin-bottom: 18px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.74);
+      backdrop-filter: blur(16px);
+      box-shadow: var(--shadow);
+    }
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .brand h1 {
+      font-size: 16px;
+      color: var(--green-deep);
+      letter-spacing: 0.02em;
+    }
+    .brand p {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .home-btn {
+      padding: 9px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--line-strong);
+      background: linear-gradient(180deg, #ffffff, #f3f7ed);
+      color: var(--green-deep);
+      font-size: 13px;
+      font-weight: 700;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+      cursor: pointer;
+    }
+    .home-btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(123,168,98,0.42);
+      box-shadow: 0 8px 20px rgba(82,101,68,0.12);
+    }
+
     .hero {
-      background: linear-gradient(135deg, #e8f3df 0%, #f0f6e8 50%, #e3eef8 100%);
-      padding: 40px 24px 32px;
+      padding: 18px 0 18px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(280px, 380px);
+      gap: 18px;
+      align-items: start;
+    }
+    .hero-copy,
+    .hero-note,
+    .section-card,
+    .import-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+    .hero-copy {
+      padding: 28px 28px 24px;
+    }
+    .eyebrow {
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      color: var(--green);
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .hero-copy h2 {
+      font-size: clamp(28px, 3.2vw, 44px);
+      line-height: 1.08;
+      color: var(--green-deep);
+      letter-spacing: -0.02em;
+      max-width: 14ch;
+    }
+    .hero-copy p {
+      margin-top: 14px;
+      max-width: 62ch;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .chip-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line-strong);
+      background: #fff;
+      color: var(--green-deep);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .hero-note {
+      padding: 22px;
+      display: grid;
+      gap: 10px;
+    }
+    .hero-note h3 {
+      font-size: 15px;
+      color: var(--green-deep);
+    }
+    .hero-note ul {
+      list-style: none;
+      display: grid;
+      gap: 8px;
+    }
+    .hero-note li {
+      display: flex;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--muted);
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.72);
+      border: 1px solid rgba(123,168,98,0.10);
+    }
+    .hero-note strong {
+      color: var(--text);
+      flex: 0 0 auto;
+    }
+
+    .section {
+      margin-top: 18px;
+    }
+    .section-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+    .section-head h3 {
+      font-size: 18px;
+      color: var(--green-deep);
+    }
+    .section-head p {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .workflow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .workflow-card {
+      padding: 18px;
+      border-radius: var(--radius);
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      min-height: 172px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .workflow-card h4 {
+      font-size: 15px;
+      color: var(--green-deep);
+    }
+    .workflow-card p {
+      font-size: 13px;
+      color: var(--muted);
+      flex: 1;
+    }
+    .workflow-card .meta {
+      font-size: 11px;
+      color: var(--green);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .module-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .module {
+      padding: 18px;
+      border-radius: var(--radius);
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 142px;
+    }
+    .module h4 {
+      font-size: 15px;
+      color: var(--green-deep);
+    }
+    .module p {
+      font-size: 13px;
+      color: var(--muted);
+      flex: 1;
+    }
+    .module .small {
+      font-size: 12px;
+      color: var(--green);
+    }
+
+    .import-card {
+      padding: 20px;
+    }
+    .import-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 16px;
+    }
+    .import-head h3 {
+      font-size: 20px;
+      color: var(--green-deep);
+      margin-bottom: 6px;
+    }
+    .import-head p {
+      font-size: 13px;
+      color: var(--muted);
+      max-width: 68ch;
+    }
+    .import-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 0 0 200px;
+    }
+    .primary-btn, .ghost-btn, .danger-btn {
+      border: 1px solid transparent;
+      border-radius: 12px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
       text-align: center;
-      border-bottom: 1px solid #d6e8c8;
+      font-weight: 700;
     }
-    .hero-emoji { font-size: 40px; margin-bottom: 12px; }
-    .hero h1 { font-size: 22px; font-weight: 700; color: #3a5a2a; }
-    .hero .tagline { font-size: 13px; color: #5a8a42; margin-top: 4px; font-weight: 500; }
-    .hero .promo {
-      max-width: 640px; margin: 16px auto 0;
-      font-size: 13px; color: #4a5e4a;
-      background: rgba(255,255,255,0.7); border-radius: 10px;
-      padding: 14px 18px; text-align: left; border: 1px solid #c8ddb8;
+    .primary-btn {
+      background: linear-gradient(180deg, #7aa764, #648d52);
+      color: #fff;
+      box-shadow: 0 10px 20px rgba(82,101,68,0.16);
     }
-    .hero .promo p + p { margin-top: 6px; }
-    .content { max-width: 720px; margin: 0 auto; padding: 28px 20px 60px; }
-    .section-header {
-      font-size: 11px; font-weight: 600; color: #7ba862;
-      letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 18px;
+    .ghost-btn {
+      background: rgba(255,255,255,0.8);
+      border-color: var(--line-strong);
+      color: var(--green-deep);
     }
-    .step {
-      background: #fff; border: 1px solid #deecd0; border-radius: 14px;
-      padding: 22px; margin-bottom: 18px;
-      box-shadow: 0 2px 8px rgba(90,138,66,0.06);
+    .danger-btn {
+      background: rgba(220,53,69,0.08);
+      border-color: rgba(220,53,69,0.18);
+      color: #aa2e3c;
     }
-    .step-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-    .step-num {
-      width: 30px; height: 30px; border-radius: 50%;
-      background: #7ba862; color: #fff; font-size: 13px; font-weight: 700;
-      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    .primary-btn:hover, .ghost-btn:hover, .danger-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 18px rgba(82,101,68,0.10);
     }
-    .step-title { font-size: 15px; font-weight: 600; color: #2d4a1e; }
-    .step-desc { font-size: 13px; color: #607060; margin-bottom: 14px; }
-    .mock {
-      background: #fafcf8; border: 1.5px solid #d0e4c0; border-radius: 10px;
-      padding: 16px; font-size: 12px; color: #3a4a3a;
+
+    .upload-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 14px;
     }
-    .mock-title {
-      font-size: 10px; font-weight: 600; color: #9ab88a;
-      letter-spacing: 0.08em; margin-bottom: 12px; text-transform: uppercase;
+    .panel {
+      border: 1px solid rgba(123,168,98,0.14);
+      border-radius: 16px;
+      background: rgba(250,252,247,0.92);
+      padding: 16px;
     }
-    .mock-card {
-      background: #fff; border: 1px solid #e0ecd8; border-radius: 9px;
-      padding: 16px; max-width: 300px; margin: 0 auto;
+    .panel h4 {
+      font-size: 14px;
+      color: var(--green-deep);
+      margin-bottom: 8px;
     }
-    .mock-label { font-size: 11px; color: #7a8a7a; margin-bottom: 3px; }
-    .mock-input {
-      width: 100%; border: 1.5px solid #c8ddb8; border-radius: 6px;
-      padding: 7px 10px; font-size: 12px; margin-bottom: 8px;
-      color: #5a6a5a; background: #f7faf2;
+    .panel p.help {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 10px;
     }
-    .mock-btn {
-      display: block; width: 100%; background: #7ba862; color: #fff;
-      border: none; border-radius: 7px; padding: 9px; font-size: 12px;
-      font-weight: 600; text-align: center; cursor: default;
+    .file-input {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      border-radius: 12px;
+      border: 1px dashed rgba(123,168,98,0.35);
+      background: rgba(255,255,255,0.84);
+      color: var(--muted);
+      margin-bottom: 12px;
     }
-    .mock-btn-secondary {
-      display: block; width: 100%; background: transparent; color: #7ba862;
-      border: none; border-radius: 7px; padding: 7px; font-size: 11px;
-      text-align: center; cursor: default; margin-top: 5px;
+    .text-area {
+      width: 100%;
+      min-height: 240px;
+      resize: vertical;
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(123,168,98,0.24);
+      background: #fff;
+      color: var(--text);
+      line-height: 1.7;
+      outline: none;
     }
-    .mock-class-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 8px; }
-    .mock-class-card {
-      border: 1.5px solid #c8ddb8; border-radius: 9px;
-      padding: 10px 8px; text-align: center; background: #f7faf2;
+    .text-area:focus {
+      border-color: rgba(123,168,98,0.44);
+      box-shadow: 0 0 0 4px rgba(123,168,98,0.10);
     }
-    .mock-class-name { font-size: 12px; font-weight: 600; color: #3a5a2a; }
-    .mock-class-action { font-size: 10px; color: #7ba862; margin-top: 3px; }
-    .mock-module-list { display: flex; flex-direction: column; gap: 6px; }
-    .mock-module {
-      display: flex; align-items: center; gap: 8px;
-      background: #fff; border: 1.5px solid #d0e4c0; border-radius: 8px; padding: 8px 12px;
+    .status {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--green);
     }
-    .mock-module.required { border-color: #7ba862; background: #f2f9ec; }
-    .mock-checkbox {
-      width: 16px; height: 16px; border-radius: 3px;
-      border: 2px solid #7ba862; flex-shrink: 0;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 10px; color: #7ba862; font-weight: 700;
+    .queue {
+      display: grid;
+      gap: 10px;
+      max-height: 470px;
+      overflow: auto;
+      padding-right: 4px;
     }
-    .mock-checkbox.unchecked { border-color: #b0c8a0; color: transparent; }
-    .mock-module-name { font-size: 12px; font-weight: 600; }
-    .mock-module-tag {
-      margin-left: auto; font-size: 9px; color: #5a8a42;
-      background: #e0f0d0; border-radius: 3px; padding: 1px 5px;
+    .queue-empty {
+      padding: 18px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.78);
+      color: var(--muted);
+      border: 1px dashed rgba(123,168,98,0.24);
+      font-size: 13px;
     }
-    .mock-upload-zone {
-      border: 2px dashed #b0d0a0; border-radius: 9px; padding: 14px;
-      text-align: center; color: #7a9a6a; font-size: 12px;
-      background: #f7faf2; margin-bottom: 8px;
+    .queue-item {
+      padding: 14px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.84);
+      border: 1px solid rgba(123,168,98,0.18);
+      display: grid;
+      gap: 8px;
     }
-    .mock-upload-icon { font-size: 20px; margin-bottom: 4px; }
-    .mock-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    .mock-table th {
-      background: #e8f3df; color: #4a6a3a; padding: 6px 8px;
-      text-align: left; font-weight: 600; border-bottom: 1px solid #c8ddb8;
+    .queue-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: flex-start;
     }
-    .mock-table td { padding: 6px 8px; border-bottom: 1px solid #eff5e8; color: #3a4a3a; }
-    .mock-table tr:last-child td { border-bottom: none; }
-    .mock-export-row { display: flex; gap: 8px; margin-top: 12px; }
-    .mock-export-btn { flex: 1; padding: 9px; border-radius: 7px; text-align: center; font-size: 12px; font-weight: 600; }
-    .mock-export-btn.green { background: #7ba862; color: #fff; }
-    .mock-export-btn.outline { border: 1.5px solid #7ba862; color: #5a7a42; background: #f2f9ec; }
-    .callout {
-      display: flex; align-items: flex-start; gap: 8px; margin-top: 12px;
-      background: #fffbe8; border: 1px solid #e8d878; border-radius: 7px;
-      padding: 9px 12px; font-size: 12px; color: #5a4a20;
+    .queue-title {
+      font-size: 14px;
+      color: var(--text);
+      font-weight: 700;
     }
-    .callout-icon { flex-shrink: 0; font-size: 14px; }
-    .step-connector { text-align: center; color: #a8c898; font-size: 18px; margin: -6px 0; }
-    .tip-box {
-      background: #f0f6e8; border: 1px solid #c8ddb8; border-radius: 9px;
-      padding: 14px 18px; font-size: 13px; color: #4a6a3a; margin-top: 24px;
+    .queue-sub {
+      font-size: 12px;
+      color: var(--muted);
     }
-    .tip-box strong { color: #3a5a2a; }
-    @media (max-width: 520px) {
-      .mock-class-grid { grid-template-columns: repeat(2,1fr); }
+    .queue-badges {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(123,168,98,0.10);
+      color: var(--green-deep);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .badge.soft {
+      background: rgba(90,110,150,0.10);
+      color: #4c607f;
+    }
+    .queue-preview {
+      font-size: 12px;
+      color: var(--muted);
+      background: rgba(245,248,242,0.9);
+      border: 1px solid rgba(123,168,98,0.14);
+      border-radius: 12px;
+      padding: 10px 12px;
+      white-space: pre-wrap;
+    }
+    .queue-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .footer-note {
+      margin-top: 20px;
+      font-size: 12px;
+      color: var(--muted);
+      padding: 0 4px;
+    }
+
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+    }
+    .skip-link:focus {
+      left: 16px;
+      top: 16px;
+      background: #fff;
+      padding: 8px 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      z-index: 50;
+    }
+
+    @media (max-width: 920px) {
+      .hero,
+      .upload-grid,
+      .workflow,
+      .module-grid {
+        grid-template-columns: 1fr;
+      }
+      .import-head {
+        flex-direction: column;
+      }
+      .import-actions {
+        flex: 1 1 auto;
+        width: 100%;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .page { padding: 18px 14px 42px; }
+      .topbar {
+        border-radius: 24px;
+        padding: 12px;
+      }
+      .hero-copy,
+      .hero-note,
+      .import-card,
+      .workflow-card,
+      .module,
+      .panel {
+        border-radius: 16px;
+      }
+      .hero-copy {
+        padding: 22px 20px 20px;
+      }
+      .text-area {
+        min-height: 200px;
+      }
+      .queue {
+        max-height: none;
+      }
     }
   </style>
 </head>
 <body>
-
-<div class="hero">
-  <div class="hero-emoji">🧑‍🎨</div>
-  <h1>Super Amber is here!</h1>
-  <div class="tagline">C&amp;F School · MP 发放助手</div>
-  <div class="promo">
-    <p>老师们每周发放 minipin 的时间，本可以用来做更重要的事。Super Amber 把繁琐的数据整理交给自动化——上传文件、确认数字、一键导出，全程不超过 3 分钟。</p>
-    <p>不用再手动对表、不用逐个核算，基础落实、每日开口、课堂参与、个性化奖励，各模块数据自动汇总，结果直接能上传教务系统，或发进班级群公示。</p>
-    <p style="color:#7ba862; font-weight:500;">更多功能持续完善中，敬请期待。</p>
-  </div>
-</div>
-
-<div class="content">
-  <div class="section-header">使用步骤</div>
-
-  <div class="step">
-    <div class="step-head"><div class="step-num">1</div><div class="step-title">登录教务系统</div></div>
-    <div class="step-desc">输入你在 C&amp;F 教务系统的账号和密码，点击「连接教务系统」。系统会自动拉取你名下的班级列表（约需 15 秒）。<br>如果暂时不需要自动加载班级，可以点击下方「暂时跳过」直接进入。</div>
-    <div class="mock">
-      <div class="mock-title">界面示意 · 登录页</div>
-      <div class="mock-card">
-        <div style="text-align:center; margin-bottom:12px;"><div style="font-size:20px;">🌿</div><div style="font-size:13px; font-weight:700; color:#3a5a2a;">Super Amber is here!</div><div style="font-size:10px; color:#7ba862;">连接教务系统</div></div>
-        <div class="mock-label">账号名</div><div class="mock-input">请输入教务系统账号</div>
-        <div class="mock-label">密码</div><div class="mock-input" style="margin-bottom:12px;">••••••••</div>
-        <div class="mock-btn">连接教务系统 →　⬅ 点这里</div>
-        <div class="mock-btn-secondary">暂时跳过，手动操作</div>
+  <a class="skip-link" href="#main">跳到内容</a>
+  <div class="page">
+    <header class="topbar">
+      <div class="brand">
+        <h1>Super Amber · 使用说明</h1>
+        <p>主页 / 班级主页 / 座位表 / 概览 / 日报 / 补课助手</p>
       </div>
-    </div>
-    <div class="callout"><span class="callout-icon">💡</span>账号和密码与你平时登录 cnfadmin.cnfschool.net 的一样。</div>
+      <a class="home-btn" href="/" target="_top">← 返回主页</a>
+    </header>
+
+    <main id="main">
+      <section class="hero">
+        <div class="hero-copy">
+          <div class="eyebrow">最新流程</div>
+          <h2>把班级资料先收好，再去做发放、概览和日报。</h2>
+          <p>
+            现在的首页会先把班级和座位表放在一起。班级如果已经有座位表，
+            名单和上课时间会优先回收；没有的话，也能在这里继续补录，不需要来回切页面。
+          </p>
+          <div class="hero-actions">
+            <a class="chip-link" href="#workflow">查看当前路径</a>
+            <a class="chip-link" href="#modules">看各功能入口</a>
+            <a class="chip-link" href="#batch-import">导入多个班级座位表</a>
+          </div>
+        </div>
+        <aside class="hero-note">
+          <h3>现在你会看到这些变化</h3>
+          <ul>
+            <li><strong>主页入口</strong><span>每个班级页都能直接返回主页，不会卡在子页面里。</span></li>
+            <li><strong>名单回收</strong><span>座位表里已有的名单会优先回收，班级档案会自动接上。</span></li>
+            <li><strong>批量导入</strong><span>多个座位表可以先放进队列，再把 OCR 文本一次性识别。</span></li>
+            <li><strong>说明更新</strong><span>下面这页是当前版本的最新入口说明，不再是旧的发放流程。</span></li>
+          </ul>
+        </aside>
+      </section>
+
+      <section class="section" id="workflow">
+        <div class="section-head">
+          <h3>当前使用路径</h3>
+          <p>先回主页，再进班级。座位表、概览、日报都从班级主页开始。</p>
+        </div>
+        <div class="workflow">
+          <article class="workflow-card">
+            <div class="meta">Step 01</div>
+            <h4>回到主页</h4>
+            <p>在任一班级页都可以直接点“返回主页”，先回到总览，再决定去座位表、概览还是日报。</p>
+          </article>
+          <article class="workflow-card">
+            <div class="meta">Step 02</div>
+            <h4>进入班级主页</h4>
+            <p>班级主页会先显示座位表状态、学生人数和可用功能。这里是老师真正开始操作的地方。</p>
+          </article>
+          <article class="workflow-card">
+            <div class="meta">Step 03</div>
+            <h4>先补齐座位表</h4>
+            <p>有座位表就优先回收名单和时间。没有的话，可以先用下面的批量导入，把多班资料收进来。</p>
+          </article>
+          <article class="workflow-card">
+            <div class="meta">Step 04</div>
+            <h4>再做概览和日报</h4>
+            <p>概览更适合上课周的板块拼装，日报更适合收数据后直接出文案，不要把它们当成同一个页面。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="modules">
+        <div class="section-head">
+          <h3>功能入口</h3>
+          <p>从班级主页进，不要在说明页里绕太多层。</p>
+        </div>
+        <div class="module-grid">
+          <article class="module">
+            <h4>座位表</h4>
+            <p>读取已经录入的座位表，优先带回名单和上课时间。适合先把基础信息补完整。</p>
+            <div class="small">看名单 / 改座位 / 补时间</div>
+          </article>
+          <article class="module">
+            <h4>课程概览</h4>
+            <p>按班级实际节奏排“本周挑战、分阶段挑战、听读语料、交流名单、自定义区”。</p>
+            <div class="small">模板化输出 / 内容可编辑</div>
+          </article>
+          <article class="module">
+            <h4>班级日报</h4>
+            <p>导入数据后自动生成日报文本。更适合每天收完数据以后再处理。</p>
+            <div class="small">导入表格 / 自动成稿</div>
+          </article>
+          <article class="module">
+            <h4>补课助手</h4>
+            <p>用于处理补课班次和日期。主页会告诉你它是否已经有可用数据。</p>
+            <div class="small">课次 / 周次 / 班级匹配</div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="batch-import">
+        <div class="section-head">
+          <h3>导入多个班级座位表</h3>
+          <p>这里先做队列和识别草稿，后续再接更完整的 OCR / 解析流程。</p>
+        </div>
+
+        <div class="import-card">
+          <div class="import-head">
+            <div>
+              <h3>批量导入入口</h3>
+              <p>
+                你可以先一次性选多个座位表文件，或者把识别出来的 OCR 文本贴进来。
+                系统会尽量从文件名和正文里识别班级号、学生名单，再写回本机名单。
+              </p>
+            </div>
+            <div class="import-actions">
+              <button class="primary-btn" id="fillDemoBtn" type="button">填一段示例文本</button>
+              <button class="ghost-btn" id="clearQueueBtn" type="button">清空队列</button>
+              <button class="ghost-btn" id="loadQueueBtn" type="button">刷新已保存队列</button>
+            </div>
+          </div>
+
+          <div class="upload-grid">
+            <section class="panel">
+              <h4>1. 收文件 / 收文本</h4>
+              <p class="help">
+                先把多个文件拖进来。图片和 PDF 会先进入队列，文本文件会尝试自动提取。
+                如果你已经有 OCR 结果，就直接贴到右边，点“识别并加入队列”。
+              </p>
+              <input class="file-input" id="seatingFiles" type="file" multiple accept=".png,.jpg,.jpeg,.webp,.pdf,.txt,.md,.json" />
+              <textarea class="text-area" id="ocrText" placeholder="把多个班级的座位表 OCR 文本贴在这里。建议每个班级之间空一行，文件名或标题里带上班级号，例如：E102 / G205 / A301。"></textarea>
+              <div class="queue-actions" style="margin-top: 12px;">
+                <button class="primary-btn" id="parseTextBtn" type="button">识别并加入队列</button>
+                <button class="ghost-btn" id="appendFilesBtn" type="button">把当前文件加入队列</button>
+              </div>
+              <div class="status" id="statusText">还没有导入内容。</div>
+            </section>
+
+            <section class="panel">
+              <h4>2. 队列预览</h4>
+              <p class="help">
+                队列里的项目会记到本机，方便你分批处理。已识别出名单的条目可以直接写入班级档案。
+              </p>
+              <div class="queue" id="queueList">
+                <div class="queue-empty">还没有队列。先拖文件，或者把 OCR 文本贴进来。</div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <p class="footer-note">
+        说明页只负责导航和批量入口。真正的班级内容还是在班级主页、座位表和概览里继续处理。
+      </p>
+    </main>
   </div>
 
-  <div class="step-connector">↓</div>
+  <script>
+    (function () {
+      const PROFILE_KEY = 'amber_class_profiles';
+      const QUEUE_KEY = 'amber_seating_batch_queue';
 
-  <div class="step">
-    <div class="step-head"><div class="step-num">2</div><div class="step-title">选择班级</div></div>
-    <div class="step-desc">登录成功后，页面显示你名下的所有班级。点击对应的班级卡片，进入该班级的 MP 发放流程。</div>
-    <div class="mock">
-      <div class="mock-title">界面示意 · 班级列表</div>
-      <div style="font-size:11px; color:#7a8a7a; margin-bottom:6px;">你的班级 · 3 个班级</div>
-      <div class="mock-class-grid">
-        <div class="mock-class-card" style="border-color:#7ba862; background:#f2f9ec;"><div class="mock-class-name">E102</div><div class="mock-class-action">开始发放 →</div><div style="font-size:9px; color:#7ba862; margin-top:3px;">⬅ 点击</div></div>
-        <div class="mock-class-card"><div class="mock-class-name">E205</div><div class="mock-class-action">开始发放 →</div></div>
-        <div class="mock-class-card"><div class="mock-class-name">E301</div><div class="mock-class-action">开始发放 →</div></div>
-      </div>
-    </div>
-  </div>
+      const fileInput = document.getElementById('seatingFiles');
+      const textArea = document.getElementById('ocrText');
+      const queueList = document.getElementById('queueList');
+      const statusText = document.getElementById('statusText');
+      const parseTextBtn = document.getElementById('parseTextBtn');
+      const appendFilesBtn = document.getElementById('appendFilesBtn');
+      const clearQueueBtn = document.getElementById('clearQueueBtn');
+      const loadQueueBtn = document.getElementById('loadQueueBtn');
+      const fillDemoBtn = document.getElementById('fillDemoBtn');
 
-  <div class="step-connector">↓</div>
+      function loadJson(key, fallback) {
+        try {
+          const raw = localStorage.getItem(key);
+          return raw ? JSON.parse(raw) : fallback;
+        } catch {
+          return fallback;
+        }
+      }
 
-  <div class="step">
-    <div class="step-head"><div class="step-num">3</div><div class="step-title">勾选本次发放模块</div></div>
-    <div class="step-desc">选择本次要计入的发放模块。「基础落实」为必选项，其余模块根据本周实际情况勾选。选好后点击「下一步」。</div>
-    <div class="mock">
-      <div class="mock-title">界面示意 · 发放模块选择</div>
-      <div class="mock-module-list">
-        <div class="mock-module required"><div class="mock-checkbox">✓</div><div><div class="mock-module-name">基础落实</div><div style="font-size:10px; color:#7a9a6a;">上传学生个人数据 xlsx</div></div><div class="mock-module-tag">必选</div></div>
-        <div class="mock-module"><div class="mock-checkbox">✓</div><div><div class="mock-module-name">每日开口</div><div style="font-size:10px; color:#7a9a6a;">上传打卡情况 xlsx</div></div></div>
-        <div class="mock-module"><div class="mock-checkbox unchecked">✓</div><div><div class="mock-module-name">课堂参与</div><div style="font-size:10px; color:#7a9a6a;">老师手动填写</div></div></div>
-        <div class="mock-module"><div class="mock-checkbox unchecked">✓</div><div><div class="mock-module-name">个性化奖励</div><div style="font-size:10px; color:#7a9a6a;">自由添加奖励项</div></div></div>
-      </div>
-      <div style="margin-top:12px;"><div class="mock-btn" style="max-width:180px;">下一步 →　⬅ 点这里</div></div>
-    </div>
-  </div>
+      function saveJson(key, value) {
+        localStorage.setItem(key, JSON.stringify(value));
+      }
 
-  <div class="step-connector">↓</div>
+      function normalizeClassCode(raw) {
+        const text = String(raw ?? '').trim();
+        if (!text) return '';
+        const match = text.match(/([A-Za-z][A-Za-z]?\d{2,4})/);
+        return match ? match[1].toUpperCase() : text.toUpperCase();
+      }
 
-  <div class="step">
-    <div class="step-head"><div class="step-num">4</div><div class="step-title">上传数据文件</div></div>
-    <div class="step-desc">将从教务系统导出的 xlsx 文件拖入对应上传区，或点击选择文件。<br>・<strong>基础落实</strong>：文件名格式 <code style="background:#eef6e8; padding:1px 4px; border-radius:3px;">{班级号}_学生个人数据_....xlsx</code><br>・<strong>每日开口</strong>（若已勾选）：<code style="background:#eef6e8; padding:1px 4px; border-radius:3px;">打卡情况....xlsx</code></div>
-    <div class="mock">
-      <div class="mock-title">界面示意 · 文件上传</div>
-      <div class="mock-upload-zone"><div class="mock-upload-icon">📂</div><div>点击或拖拽上传 · 学生个人数据.xlsx</div><div style="font-size:10px; margin-top:3px; color:#9ab88a;">⬅ 点这里选择文件</div></div>
-      <div style="margin-top:10px;"><div class="mock-btn" style="max-width:180px;">解析文件 →　⬅ 上传后点这里</div></div>
-    </div>
-    <div class="callout"><span class="callout-icon">💡</span>文件上传后系统会自动从文件名提取班级号，并按学号匹配每日开口数据，无需手动对齐。</div>
-  </div>
+      function normalizeName(raw) {
+        return String(raw ?? '')
+          .replace(/\s+/g, ' ')
+          .replace(/^[\d.、)\]-]+\s*/, '')
+          .trim();
+      }
 
-  <div class="step-connector">↓</div>
+      function extractClassCode(text) {
+        const match = String(text ?? '').match(/([A-Za-z][A-Za-z]?\d{2,4})/);
+        return match ? match[1].toUpperCase() : '';
+      }
 
-  <div class="step">
-    <div class="step-head"><div class="step-num">5</div><div class="step-title">确认明细 / 微调数据</div></div>
-    <div class="step-desc">进入预览页面后，可以：<br>・选择发放方案（方案一：逐项计分 / 方案二：完成度计分）<br>・调整每日开口的每次打卡 MP 值<br>・修改每位同学的课堂参与分数<br>・新增个性化奖励项（指定同学、自定义金额）<br>确认无误后点击「生成结果」。</div>
-    <div class="mock">
-      <div class="mock-title">界面示意 · 预览 &amp; 微调</div>
-      <table class="mock-table">
-        <thead><tr><th>英文名</th><th>中文名</th><th>基础落实</th><th>每日开口</th><th>合计</th></tr></thead>
-        <tbody>
-          <tr><td>Amber</td><td>李晓彤</td><td>0.8</td><td>0.3</td><td><strong>1.3</strong></td></tr>
-          <tr><td>Brian</td><td>张明宇</td><td>0.5</td><td>0.3</td><td><strong>1.1</strong></td></tr>
-          <tr><td>Cindy</td><td>王雅琪</td><td>1.0</td><td>0.1</td><td><strong>1.3</strong></td></tr>
-        </tbody>
-      </table>
-      <div style="margin-top:12px;"><div class="mock-btn" style="max-width:180px;">生成结果 →　⬅ 点这里</div></div>
-    </div>
-  </div>
+      function extractNamesFromText(raw) {
+        const blocked = new Set([
+          '座位表', '班级', '姓名', '学号', '老师', '时间', '地点', '星期', '周一', '周二', '周三', '周四', '周五', '周六', '周日',
+          '班主任', '备注', '页', '座号', '序号', '位置', '教室', '上课', '下课'
+        ]);
+        const seen = new Set();
+        const result = [];
+        const text = String(raw ?? '').replace(/\r\n/g, '\n');
+        const candidates = text.match(/[A-Za-z][A-Za-z' -]{1,}|[\u4e00-\u9fa5]{2,4}/g) || [];
+        for (const candidate of candidates) {
+          const name = normalizeName(candidate);
+          if (!name) continue;
+          if (blocked.has(name)) continue;
+          if (/^\d+$/.test(name)) continue;
+          if (/^[A-Za-z]{1,2}\d{2,4}$/i.test(name)) continue;
+          if (name.length > 10) continue;
+          if (!seen.has(name)) {
+            seen.add(name);
+            result.push(name);
+          }
+        }
+        return result;
+      }
 
-  <div class="step-connector">↓</div>
+      function parseBlocks(raw) {
+        const text = String(raw ?? '').replace(/\r\n/g, '\n').trim();
+        if (!text) return [];
+        const chunks = text.split(/\n\s*\n+/).map((chunk) => chunk.trim()).filter(Boolean);
+        const blocks = [];
+        for (const chunk of chunks) {
+          const classCode = extractClassCode(chunk);
+          const names = extractNamesFromText(chunk);
+          blocks.push({
+            id: `batch_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            source: 'ocr',
+            label: classCode ? `班级 ${classCode}` : '未识别班级',
+            classCode,
+            names,
+            text: chunk,
+            status: names.length > 0 ? 'ready' : 'draft',
+          });
+        }
+        return blocks;
+      }
 
-  <div class="step">
-    <div class="step-head"><div class="step-num">6</div><div class="step-title">导出结果</div></div>
-    <div class="step-desc">结果页面显示全班 MP 明细汇总表。<br>・<strong>导出图片</strong>：生成可直接发班级群的公示图片<br>・<strong>导出 Excel</strong>：生成符合教务系统上传格式的 xlsx 文件（英文名 / 中文名 / 学号 / 发放MP数量）</div>
-    <div class="mock">
-      <div class="mock-title">界面示意 · 导出结果</div>
-      <div class="mock-export-row">
-        <div class="mock-export-btn green">📷 导出图片　⬅ 发群</div>
-        <div class="mock-export-btn outline">📊 导出 Excel　⬅ 上传教务</div>
-      </div>
-    </div>
-    <div class="callout"><span class="callout-icon">💡</span>导出的 Excel 可直接上传到 cnfadmin.cnfschool.net 的「发放MP」功能，无需二次整理。</div>
-  </div>
+      function loadQueue() {
+        return loadJson(QUEUE_KEY, []);
+      }
 
-  <div class="tip-box">
-    <strong>常见问题</strong><br><br>
-    <strong>Q：上传文件后提示读取失败？</strong><br>
-    请确认上传的是从教务系统直接导出的原始 xlsx 文件，不要另存为其他格式，也不要修改文件内的 Sheet 名称。
-  </div>
-</div>
+      function saveQueue(queue) {
+        saveJson(QUEUE_KEY, queue);
+      }
+
+      function renderStatus(queue) {
+        const savedNames = queue.reduce((sum, item) => sum + (item.names?.length || 0), 0);
+        const savedClasses = new Set(queue.map((item) => item.classCode).filter(Boolean)).size;
+        statusText.textContent = queue.length
+          ? `已保存 ${queue.length} 个队列项，涉及 ${savedClasses} 个班级、${savedNames} 个名字。`
+          : '还没有导入内容。';
+      }
+
+      function renderQueue() {
+        const queue = loadQueue();
+        renderStatus(queue);
+        if (!queue.length) {
+          queueList.innerHTML = '<div class="queue-empty">还没有队列。先拖文件，或者把 OCR 文本贴进来。</div>';
+          return;
+        }
+
+        queueList.innerHTML = queue.map((item, index) => {
+          const names = item.names && item.names.length ? item.names.join('、') : '未识别到名单，先保留文本再继续补';
+          const meta = [
+            item.classCode ? `班级 ${item.classCode}` : '班级未识别',
+            item.source === 'file' ? '文件队列' : 'OCR 文本',
+            item.status === 'written' ? '已写入' : item.status === 'ready' ? '可写入' : '待处理'
+          ];
+          return `
+            <article class="queue-item" data-index="${index}">
+              <div class="queue-top">
+                <div>
+                  <div class="queue-title">${escapeHtml(item.label || '未命名条目')}</div>
+                  <div class="queue-sub">${escapeHtml(item.fileName || item.source || '手动录入')}</div>
+                </div>
+                <div class="queue-badges">
+                  ${meta.map((label) => `<span class="badge">${escapeHtml(label)}</span>`).join('')}
+                </div>
+              </div>
+              <div class="queue-preview">${escapeHtml(names)}</div>
+              <div class="queue-actions">
+                <button class="primary-btn" type="button" data-action="write" data-index="${index}">写入名单</button>
+                <button class="ghost-btn" type="button" data-action="keep" data-index="${index}">保留草稿</button>
+                <button class="danger-btn" type="button" data-action="delete" data-index="${index}">删除</button>
+              </div>
+            </article>
+          `;
+        }).join('');
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function loadProfiles() {
+        return loadJson(PROFILE_KEY, []);
+      }
+
+      function saveProfiles(profiles) {
+        saveJson(PROFILE_KEY, profiles);
+      }
+
+      function writeNamesToProfile(classCode, names) {
+        const code = normalizeClassCode(classCode);
+        if (!code || !names.length) return false;
+
+        const profiles = loadProfiles();
+        let profile = profiles.find((item) => item.classCode.toUpperCase() === code.toUpperCase());
+        if (!profile) {
+          profile = { classCode: code, schedule: [], students: [], updatedAt: Date.now() };
+          profiles.push(profile);
+        }
+        profile.students = Array.isArray(profile.students) ? profile.students : [];
+
+        const existing = new Set((profile.students || []).map((student) => String(student.chineseName || '').trim()));
+        for (const name of names.map(normalizeName).filter(Boolean)) {
+          if (!existing.has(name)) {
+            profile.students.push({
+              id: `${code}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+              chineseName: name,
+            });
+            existing.add(name);
+          }
+        }
+        profile.updatedAt = Date.now();
+        saveProfiles(profiles);
+        return true;
+      }
+
+      function addItems(items, sourceLabel) {
+        const queue = loadQueue();
+        for (const item of items) {
+          queue.unshift({
+            ...item,
+            sourceLabel,
+          });
+        }
+        saveQueue(queue);
+        renderQueue();
+      }
+
+      async function appendSelectedFiles() {
+        const files = Array.from(fileInput.files || []);
+        if (!files.length) {
+          statusText.textContent = '先选文件，再加入队列。';
+          return;
+        }
+
+        const entries = [];
+        for (const file of files) {
+          const base = {
+            id: `file_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            source: 'file',
+            label: file.name,
+            fileName: file.name,
+            classCode: extractClassCode(file.name),
+            names: [],
+            text: '',
+            status: 'draft',
+          };
+
+          if (/\.txt$|\.md$|\.json$/i.test(file.name) || /text\//i.test(file.type)) {
+            const text = await file.text();
+            const names = extractNamesFromText(text);
+            entries.push({
+              ...base,
+              text,
+              names,
+              classCode: base.classCode || extractClassCode(text),
+              status: names.length ? 'ready' : 'draft',
+            });
+          } else {
+            entries.push(base);
+          }
+        }
+
+        addItems(entries, 'file');
+        fileInput.value = '';
+        statusText.textContent = `已加入 ${entries.length} 个文件到队列。`;
+      }
+
+      function appendTextBlocks() {
+        const blocks = parseBlocks(textArea.value);
+        if (!blocks.length) {
+          statusText.textContent = '没有读到可以识别的文本。';
+          return;
+        }
+        addItems(blocks.map((item) => ({
+          ...item,
+          source: 'ocr',
+          fileName: '粘贴的 OCR 文本',
+          status: item.names.length ? 'ready' : 'draft',
+        })), 'ocr');
+        statusText.textContent = `已识别并加入 ${blocks.length} 个文本块。`;
+      }
+
+      function fillDemo() {
+        textArea.value = [
+          'E102 座位表',
+          '1. 李晓彤  2. 周子然  3. 王一诺  4. 陈雨桐',
+          '5. 赵子墨  6. 刘思远  7. 孙若彤',
+          '',
+          'G205 班级座位',
+          '1 李明轩 2 吴可欣 3 胡嘉怡 4 周云开',
+          '5 钱雨晨 6 郑一鸣 7 林子涵',
+        ].join('\n');
+        statusText.textContent = '已填入示例文本，可以直接点“识别并加入队列”。';
+      }
+
+      function handleQueueAction(event) {
+        const target = event.target.closest('button[data-action]');
+        if (!target) return;
+        const action = target.dataset.action;
+        const index = Number(target.dataset.index);
+        const queue = loadQueue();
+        const item = queue[index];
+        if (!item) return;
+
+        if (action === 'delete') {
+          queue.splice(index, 1);
+          saveQueue(queue);
+          renderQueue();
+          return;
+        }
+
+        if (action === 'keep') {
+          statusText.textContent = `${item.classCode || item.label || '这个条目'} 已保留在草稿队列里。`;
+          return;
+        }
+
+        if (action === 'write') {
+          const names = (item.names || []).map(normalizeName).filter(Boolean);
+          if (!item.classCode || !names.length) {
+            statusText.textContent = '这个条目还没识别到足够信息，先补班级号或名单。';
+            return;
+          }
+          const ok = writeNamesToProfile(item.classCode, names);
+          if (ok) {
+            queue[index] = { ...item, status: 'written' };
+            saveQueue(queue);
+            renderQueue();
+            statusText.textContent = `已写入 ${item.classCode} 的 ${names.length} 个名字。`;
+          }
+        }
+      }
+
+      function clearQueue() {
+        saveQueue([]);
+        renderQueue();
+      }
+
+      fileInput.addEventListener('change', () => {
+        statusText.textContent = `已选 ${fileInput.files?.length || 0} 个文件，点“把当前文件加入队列”即可保存。`;
+      });
+      parseTextBtn.addEventListener('click', appendTextBlocks);
+      appendFilesBtn.addEventListener('click', appendSelectedFiles);
+      clearQueueBtn.addEventListener('click', clearQueue);
+      loadQueueBtn.addEventListener('click', renderQueue);
+      fillDemoBtn.addEventListener('click', fillDemo);
+      queueList.addEventListener('click', handleQueueAction);
+
+      renderQueue();
+    })();
+  </script>
 </body>
 </html>

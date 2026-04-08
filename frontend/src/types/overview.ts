@@ -4,6 +4,7 @@ export type PhaseChallengeKey = '夯实基础' | '维稳达标' | '突破拔高'
 export type ListeningFontOption = 'print' | 'guide' | 'rounded';
 export type CustomBlockMode = 'text' | 'table' | 'image';
 export type MediaAnnotationType = 'box' | 'text';
+export type OverviewThemeOption = 'green' | 'amber' | 'blue';
 
 export interface WeeklyChallengeDay {
   day: DayOfWeek;
@@ -85,6 +86,7 @@ export interface CustomBlock {
 export interface OverviewContent {
   classCode: string;
   week: number;
+  theme: OverviewThemeOption;
   challengeStartDay: DayOfWeek;
   weeklyChallenges: WeeklyChallengeDay[];
   phaseChallenges: PhaseChallengeRow[];
