@@ -231,10 +231,6 @@ export default function Welcome({ teacherName, classes, onSelectClass, onLogout,
           <div className="batch-import-copy">
             <div className="batch-import-kicker">核心使用建议</div>
             <h2>建议首次使用前先批量导入名单</h2>
-            <p>
-              把学号、中文名、英文名一次性整理好。后续查班级、做概览、发公示、
-              补课堂记录都会更省事。
-            </p>
           </div>
           <div className="batch-import-actions">
             <button className="btn btn-primary btn-sm" onClick={() => onNavigate('roster')}>

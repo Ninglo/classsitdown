@@ -3,6 +3,7 @@ import type { ClassInfo } from '../types';
 import type {
   ChallengeItem,
   CustomBlock,
+  CommunicationGroup,
   ListeningFontOption,
   ListeningMaterialItem,
   MediaAnnotation,
@@ -22,12 +23,14 @@ import {
   createMediaAnnotation,
   getCommunicationStats,
   loadDraft,
+  normalizeCommunicationPlan,
   rememberReusableContent,
   saveDraft,
   syncPhaseChallenges,
   syncWeeklyChallengeDays,
 } from '../utils/overviewData';
-import { buildListeningMaterials, extractEnglishWords } from '../utils/wordTranslation';
+import { buildListeningMaterials, extractListeningPairs } from '../utils/wordTranslation';
+import { sortStudentNames } from '../utils/classProfiles';
 import { getWeekRange, getCurrentWeek, formatDateShort } from '../utils/weekNumber';
 import './OverviewApp.css';
 
@@ -52,6 +55,22 @@ async function fileToText(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error);
     reader.readAsText(file);
   });
+}
+
+async function filesToMediaItems(files: File[]): Promise<MediaItem[]> {
+  const uploaded: MediaItem[] = [];
+  for (const file of files) {
+    const src = await fileToDataUrl(file);
+    uploaded.push({
+      id: `media_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      src,
+      name: file.name,
+      caption: '',
+      displayWidth: 100,
+      annotations: [],
+    });
+  }
+  return uploaded;
 }
 
 function formatHistoryDate(timestamp: number): string {
@@ -86,31 +105,21 @@ function hasListeningMaterials(content: OverviewContent): boolean {
 }
 
 function hasCommunicationPlan(content: OverviewContent): boolean {
-  return Boolean(
-    content.communicationPlan.selectedStudents.length ||
-    content.communicationPlan.teacherName.trim() ||
-    content.communicationPlan.scheduleText.trim() ||
-    content.communicationPlan.note.trim(),
+  return content.communicationPlan.groups.some((group) =>
+    group.selectedStudents.length > 0 ||
+    group.teacherName.trim() ||
+    group.scheduleText.trim() ||
+    group.note.trim(),
   );
 }
 
-function hasCustomBlockContent(block: CustomBlock): boolean {
-  if (block.mode === 'text') return Boolean(block.text.trim());
-  if (block.mode === 'image') return block.media.length > 0;
-  return block.table.rows.some((row) => row.some((cell) => cell.trim()));
-}
-
 function parseStudentNames(raw: string): string[] {
-  return [...new Set(
+  return sortStudentNames(
     raw
       .split(/[\n,，、;；]+/)
       .map((item) => item.replace(/^[\d.、)\]-]+\s*/, '').trim())
       .filter(Boolean),
-  )];
-}
-
-function sortStudentNames(names: string[]): string[] {
-  return [...names].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
+  );
 }
 
 const OVERVIEW_THEME_OPTIONS: Array<{ value: OverviewThemeOption; label: string }> = [
@@ -157,17 +166,7 @@ function MediaEditor({
 }) {
   async function appendFiles(files: File[]) {
     if (files.length === 0) return;
-    const uploaded: MediaItem[] = [];
-    for (const file of files) {
-      const src = await fileToDataUrl(file);
-      uploaded.push({
-        id: `media_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        src,
-        name: file.name,
-        caption: '',
-        annotations: [],
-      });
-    }
+    const uploaded = await filesToMediaItems(files);
     onChange([...items, ...uploaded]);
   }
 
@@ -236,7 +235,7 @@ function MediaEditor({
 
       {items.map((item) => (
         <div key={item.id} className="ov-media-card">
-          <div className="ov-media-preview">
+          <div className="ov-media-preview" style={{ width: `${item.displayWidth ?? 100}%` }}>
             <img src={item.src} alt={item.name || '上传图片'} />
             {item.annotations.map((annotation) => (
               <div
@@ -260,6 +259,22 @@ function MediaEditor({
             <button className="btn btn-ghost btn-sm" onClick={() => addAnnotation(item.id, 'box')}>+ 框选</button>
             <button className="btn btn-ghost btn-sm" onClick={() => addAnnotation(item.id, 'text')}>+ 文字</button>
             <button className="btn btn-ghost btn-sm" onClick={() => removeItem(item.id)}>删除图片</button>
+          </div>
+
+          <div className="ov-slider-grid ov-media-size-grid">
+            <label>
+              <span>图片宽度</span>
+              <input
+                type="range"
+                min={40}
+                max={100}
+                value={item.displayWidth ?? 100}
+                onChange={(event) => updateItem(item.id, (current) => ({
+                  ...current,
+                  displayWidth: Number(event.target.value),
+                }))}
+              />
+            </label>
           </div>
 
           <input
@@ -393,6 +408,49 @@ function CustomTableEditor({
   );
 }
 
+function createCommunicationGroup(overrides: Partial<CommunicationGroup> = {}): CommunicationGroup {
+  return {
+    id: `comm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    label: '第1组',
+    selectedStudents: [],
+    teacherName: '',
+    scheduleText: '',
+    note: '',
+    ...overrides,
+  };
+}
+
+function normalizeCommunicationGroups(groups: CommunicationGroup[]): CommunicationGroup[] {
+  return (groups.length > 0 ? groups : [createCommunicationGroup()]).map((group) => ({
+    ...group,
+    selectedStudents: sortStudentNames(group.selectedStudents),
+  }));
+}
+
+function syncCommunicationPlan(groups: CommunicationGroup[]): OverviewContent['communicationPlan'] {
+  const normalizedGroups = normalizeCommunicationGroups(groups);
+  return normalizeCommunicationPlan({
+    groups: normalizedGroups,
+    selectedStudents: normalizedGroups.flatMap((group) => group.selectedStudents),
+    teacherName: normalizedGroups[0]?.teacherName ?? '',
+    scheduleText: normalizedGroups[0]?.scheduleText ?? '',
+    note: normalizedGroups[0]?.note ?? '',
+  });
+}
+
+function shouldShowCustomBlock(block: CustomBlock): boolean {
+  if (block.mode === 'text') {
+    return Boolean(block.text.trim() || (block.title.trim() && block.title.trim() !== '补充内容'));
+  }
+
+  if (block.mode === 'table') {
+    return block.table.rows.some((row) => row.some((cell) => cell.trim()))
+      || Boolean(block.title.trim() && block.title.trim() !== '补充内容');
+  }
+
+  return block.media.length > 0 || Boolean(block.title.trim() && block.title.trim() !== '补充内容');
+}
+
 export default function OverviewApp({ classInfo, onBack }: Props) {
   const classCode = classInfo.name;
   const [studentNames, setStudentNames] = useState<string[]>(() =>
@@ -426,14 +484,19 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
     setContent((current) => {
       const nextChallenges = syncWeeklyChallengeDays(current.weeklyChallenges, orderedDays);
       const nextPhases = syncPhaseChallenges(current.phaseChallenges, studentNames);
-      const nextSelected = current.communicationPlan.selectedStudents.filter((name) => studentNames.includes(name));
+      const nextGroups = normalizeCommunicationGroups(current.communicationPlan.groups).map((group) => ({
+        ...group,
+        selectedStudents: sortStudentNames(group.selectedStudents.filter((name) => studentNames.includes(name))),
+      }));
+      const nextCommunicationPlan = syncCommunicationPlan(nextGroups);
 
       const challengesChanged = nextChallenges.length !== current.weeklyChallenges.length ||
         nextChallenges.some((item, i) => item.day !== current.weeklyChallenges[i]?.day);
       const phasesChanged = nextPhases.some((row, i) =>
         row.selectedStudents.length !== current.phaseChallenges[i]?.selectedStudents.length,
       );
-      const selectedChanged = nextSelected.length !== current.communicationPlan.selectedStudents.length;
+      const selectedChanged = JSON.stringify(nextCommunicationPlan.groups.map((group) => group.selectedStudents))
+        !== JSON.stringify(current.communicationPlan.groups.map((group) => group.selectedStudents));
 
       if (!challengesChanged && !phasesChanged && !selectedChanged) return current;
 
@@ -442,13 +505,21 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
         challengeStartDay: current.challengeStartDay || orderedDays[0] || '周一',
         weeklyChallenges: nextChallenges,
         phaseChallenges: nextPhases,
-        communicationPlan: { ...current.communicationPlan, selectedStudents: nextSelected },
+        communicationPlan: nextCommunicationPlan,
       };
     });
   }, [orderedDays, studentNames]);
 
   function updateContent(updater: (current: OverviewContent) => OverviewContent) {
-    setContent((current) => ({ ...updater(current), classCode, week }));
+    setContent((current) => {
+      const next = updater(current);
+      return {
+        ...next,
+        classCode,
+        week,
+        communicationPlan: normalizeCommunicationPlan(next.communicationPlan),
+      };
+    });
   }
 
   function handleWeekChange(nextWeek: number) {
@@ -458,7 +529,8 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
   }
 
   async function handleListeningBatchImport() {
-    const words = extractEnglishWords(listeningBatchInput);
+    const pairs = extractListeningPairs(listeningBatchInput);
+    const words = pairs.map((pair) => pair.english).filter(Boolean);
     if (words.length === 0) {
       setNotice('先把英文单词整段贴进来。');
       return;
@@ -475,7 +547,7 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
         ...current,
         listeningMaterials: materials,
       }));
-      setNotice(`已识别 ${materials.length} 个单词，中文可以继续手动改。`);
+      setNotice(`已识别 ${materials.length} 个单词，中文释义优先保留你粘贴的内容。`);
     } catch {
       setNotice('英文识别到了，但自动补中文失败了。我已经改成后端翻译链路，刷新后再试一次。');
     } finally {
@@ -526,6 +598,10 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
     return list.includes(name) ? list.filter((item) => item !== name) : [...list, name];
   }
 
+  function toggleSortedName(list: string[], name: string): string[] {
+    return sortStudentNames(toggleName(list, name));
+  }
+
   function togglePhaseStudent(rowId: string, name: string) {
     updateContent((current) => {
       const currentRow = current.phaseChallenges.find((row) => row.id === rowId);
@@ -538,14 +614,14 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
             return {
               ...row,
               selectedStudents: removing
-                ? row.selectedStudents.filter((item) => item !== name)
-                : [...row.selectedStudents.filter((item) => item !== name), name],
+                ? sortStudentNames(row.selectedStudents.filter((item) => item !== name))
+                : sortStudentNames([...row.selectedStudents.filter((item) => item !== name), name]),
             };
           }
 
           return removing
             ? row
-            : { ...row, selectedStudents: row.selectedStudents.filter((item) => item !== name) };
+            : { ...row, selectedStudents: sortStudentNames(row.selectedStudents.filter((item) => item !== name)) };
         }),
       };
     });
@@ -570,18 +646,19 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
     }
   }
 
-  function logCommunication() {
-    if (content.communicationPlan.selectedStudents.length === 0) {
+  function logCommunication(group: CommunicationGroup) {
+    if (group.selectedStudents.length === 0) {
       setNotice('先勾选交流学生。');
       return;
     }
 
     addCommunicationRecord(classCode, {
       week,
-      studentNames: content.communicationPlan.selectedStudents,
-      teacherName: content.communicationPlan.teacherName,
-      scheduleText: content.communicationPlan.scheduleText,
-      note: content.communicationPlan.note,
+      studentNames: sortStudentNames(group.selectedStudents),
+      teacherName: group.teacherName,
+      scheduleText: group.scheduleText,
+      note: group.note,
+      groupLabel: group.label,
     });
 
     setNotice('交流名单已记忆，下次会继续提醒哪些学生已交流。');
@@ -589,7 +666,7 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
 
   const communicationStats = useMemo(
     () => getCommunicationStats(classCode, studentNames),
-    [classCode, studentNames, content.communicationPlan.selectedStudents],
+    [classCode, studentNames, content.communicationPlan.groups],
   );
   const weekRange = getWeekRange(week);
   const orderedChallengeDays = useMemo(
@@ -602,7 +679,16 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
   );
   const showWeeklyChallenges = hasWeeklyChallenges(content);
   const showCommunicationSection = hasCommunicationPlan(content);
-  const visibleCustomBlocks = content.customBlocks.filter(hasCustomBlockContent);
+  const communicationGroups = content.communicationPlan.groups.length > 0
+    ? content.communicationPlan.groups
+    : [createCommunicationGroup()];
+  const previewCommunicationGroups = communicationGroups.filter((group) =>
+    group.selectedStudents.length > 0 ||
+    group.teacherName.trim() ||
+    group.scheduleText.trim() ||
+    group.note.trim(),
+  );
+  const visibleCustomBlocks = content.customBlocks.filter(shouldShowCustomBlock);
   const previewTheme = content.theme || 'green';
   const phasePreviewRows = content.phaseChallenges.filter((row) =>
     row.selectedStudents.length > 0 || row.challengeContent.trim() || row.method.trim(),
@@ -834,6 +920,21 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
                   rows={3}
                   placeholder="挑战要求"
                   value={item.detail}
+                  onPaste={(event) => {
+                    const pastedImages = Array.from(event.clipboardData?.files ?? []).filter((file) => file.type.startsWith('image/'));
+                    if (pastedImages.length === 0) return;
+                    event.preventDefault();
+                    void filesToMediaItems(pastedImages).then((uploaded) =>
+                      updateContent((current) => ({
+                        ...current,
+                        challengeItems: current.challengeItems.map((challenge) =>
+                          challenge.id === item.id
+                            ? { ...challenge, media: [...challenge.media, ...uploaded] }
+                            : challenge,
+                        ),
+                      })),
+                    );
+                  }}
                   onChange={(event) =>
                     updateContent((current) => ({
                       ...current,
@@ -939,61 +1040,121 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
           <section className="ov-editor-section">
             <div className="ov-section-head">
               <h3>⑤ 交流名单</h3>
-              <p>会记录哪些学生交流过，也会记住常用交流人、时间和地点。</p>
+              <p>可以分成多组安排，每组各自记学生、时间和说明。</p>
             </div>
             <div className="ov-summary-strip">
               <span className="chip">已交流 {communicationStats.contacted.length} 人</span>
               <span className="chip">待交流 {communicationStats.pending.length} 人</span>
             </div>
-            <StudentPicker
-              studentNames={studentNames}
-              selected={content.communicationPlan.selectedStudents}
-              onToggle={(name) =>
-                updateContent((current) => ({
-                  ...current,
-                  communicationPlan: {
-                    ...current.communicationPlan,
-                    selectedStudents: toggleName(current.communicationPlan.selectedStudents, name),
-                  },
-                }))
-              }
-            />
-            <div className="ov-three-cols">
-              <input
-                className="input-field"
-                placeholder="交流人"
-                value={content.communicationPlan.teacherName}
-                onChange={(event) =>
-                  updateContent((current) => ({
-                    ...current,
-                    communicationPlan: { ...current.communicationPlan, teacherName: event.target.value },
-                  }))
-                }
-              />
-              <input
-                className="input-field"
-                placeholder="交流时间 & 地点"
-                value={content.communicationPlan.scheduleText}
-                onChange={(event) =>
-                  updateContent((current) => ({
-                    ...current,
-                    communicationPlan: { ...current.communicationPlan, scheduleText: event.target.value },
-                  }))
-                }
-              />
-              <button className="btn btn-primary btn-sm" onClick={logCommunication}>记为已交流</button>
+            <div className="ov-inline-actions ov-inline-actions-start">
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() =>
+                    updateContent((current) => ({
+                      ...current,
+                    communicationPlan: syncCommunicationPlan([
+                      ...current.communicationPlan.groups,
+                      createCommunicationGroup({ label: `第${current.communicationPlan.groups.length + 1}组` }),
+                    ]),
+                    }))
+                  }
+                >
+                + 增加一组
+              </button>
             </div>
-            <textarea
-              rows={3}
-              placeholder="交流补充说明"
-              value={content.communicationPlan.note}
-              onChange={(event) =>
-                updateContent((current) => ({
-                  ...current,
-                  communicationPlan: { ...current.communicationPlan, note: event.target.value },
-                }))
-              }
-            />
+            <div className="ov-comm-group-list">
+              {communicationGroups.map((group, index) => (
+                <section key={group.id} className="ov-comm-group-card">
+                  <div className="ov-comm-group-head">
+                    <strong>{group.label || `第 ${index + 1} 组`}</strong>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => logCommunication(group)}
+                    >
+                      记为已交流
+                    </button>
+                  </div>
+                  <StudentPicker
+                    studentNames={studentNames}
+                    selected={group.selectedStudents}
+                    onToggle={(name) =>
+                      updateContent((current) => ({
+                        ...current,
+                        communicationPlan: syncCommunicationPlan(
+                          current.communicationPlan.groups.map((item) =>
+                            item.id === group.id
+                              ? { ...item, selectedStudents: toggleSortedName(item.selectedStudents, name) }
+                              : item,
+                          ),
+                        ),
+                      }))
+                    }
+                  />
+                  <div className="ov-three-cols">
+                    <input
+                      className="input-field"
+                      placeholder="交流人"
+                      value={group.teacherName}
+                      onChange={(event) =>
+                        updateContent((current) => ({
+                          ...current,
+                          communicationPlan: syncCommunicationPlan(
+                            current.communicationPlan.groups.map((item) =>
+                              item.id === group.id ? { ...item, teacherName: event.target.value } : item,
+                            ),
+                          ),
+                        }))
+                      }
+                    />
+                    <input
+                      className="input-field"
+                      placeholder="周几 / 时间 / 地点"
+                      value={group.scheduleText}
+                      onChange={(event) =>
+                        updateContent((current) => ({
+                          ...current,
+                          communicationPlan: syncCommunicationPlan(
+                            current.communicationPlan.groups.map((item) =>
+                              item.id === group.id ? { ...item, scheduleText: event.target.value } : item,
+                            ),
+                          ),
+                        }))
+                      }
+                    />
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() =>
+                        updateContent((current) => {
+                          const nextGroups = current.communicationPlan.groups.filter((item) => item.id !== group.id);
+                          return {
+                            ...current,
+                            communicationPlan: syncCommunicationPlan(nextGroups),
+                          };
+                        })
+                      }
+                      disabled={communicationGroups.length === 1}
+                    >
+                      删除组
+                    </button>
+                  </div>
+                  <textarea
+                    rows={3}
+                    placeholder="交流补充说明"
+                    value={group.note}
+                    onChange={(event) =>
+                      updateContent((current) => ({
+                        ...current,
+                        communicationPlan: syncCommunicationPlan(
+                          current.communicationPlan.groups.map((item) =>
+                            item.id === group.id ? { ...item, note: event.target.value } : item,
+                          ),
+                        ),
+                      }))
+                    }
+                  />
+                </section>
+              ))}
+            </div>
             {communicationStats.contacted.length > 0 && (
               <div className="ov-history-list">
                 {communicationStats.contacted.map((name) => {
@@ -1144,7 +1305,7 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
                   {phasePreviewRows.map((row: PhaseChallengeRow) => (
                       <Fragment key={row.id}>
                         <div key={`${row.id}_stage`} className="ov-paper-phase-stage">{row.label}</div>
-                        <div key={`${row.id}_students`} className="ov-paper-phase-cell">{row.selectedStudents.join('、')}</div>
+                        <div key={`${row.id}_students`} className="ov-paper-phase-cell">{sortStudentNames(row.selectedStudents).join('、')}</div>
                         <div key={`${row.id}_content`} className="ov-paper-phase-cell">{row.challengeContent.trim()}</div>
                         <div key={`${row.id}_method`} className="ov-paper-phase-cell">{row.method.trim()}</div>
                       </Fragment>
@@ -1165,7 +1326,7 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
                         {item.media.length > 0 && (
                           <div className="ov-paper-media-grid">
                             {item.media.map((media) => (
-                              <figure key={media.id} className="ov-paper-figure">
+                              <figure key={media.id} className="ov-paper-figure" style={{ width: `${media.displayWidth ?? 100}%` }}>
                                 <img src={media.src} alt={media.name || item.title || '挑战图片'} />
                                 {media.caption && <figcaption>{media.caption}</figcaption>}
                               </figure>
@@ -1195,21 +1356,28 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
             {showCommunicationSection && (
               <section className="ov-paper-section">
                 <div className="ov-paper-title">⑤ 交流名单</div>
-                <div className="ov-paper-comm-meta">
-                  {content.communicationPlan.teacherName && <span>交流人：{content.communicationPlan.teacherName}</span>}
-                  {content.communicationPlan.scheduleText && <span>时间地点：{content.communicationPlan.scheduleText}</span>}
+                <div className="ov-paper-comm-groups">
+                  {previewCommunicationGroups.map((group, index) => (
+                    <article key={group.id} className="ov-paper-comm-group">
+                      <div className="ov-paper-comm-meta">
+                        <span>{group.label || `第 ${index + 1} 组`}</span>
+                        {group.teacherName && <span>交流人：{group.teacherName}</span>}
+                        {group.scheduleText && <span>时间地点：{group.scheduleText}</span>}
+                      </div>
+                      {group.selectedStudents.length > 0 && (
+                        <div className="ov-paper-comm-students">{sortStudentNames(group.selectedStudents).join('、')}</div>
+                      )}
+                      {group.note && <p className="ov-paper-comm-note">{group.note}</p>}
+                    </article>
+                  ))}
                 </div>
-                {content.communicationPlan.selectedStudents.length > 0 && (
-                  <div className="ov-paper-comm-students">{content.communicationPlan.selectedStudents.join('、')}</div>
-                )}
-                {content.communicationPlan.note && <p className="ov-paper-comm-note">{content.communicationPlan.note}</p>}
               </section>
             )}
 
             {visibleCustomBlocks.map((block) => (
               <section key={block.id} className="ov-paper-section">
                 <div className="ov-paper-title">⑥ {block.title.trim() || '补充内容'}</div>
-                {block.mode === 'text' && <p className="ov-paper-paragraph">{block.text}</p>}
+                {block.mode === 'text' && <p className="ov-paper-paragraph">{block.text.trim() || '暂无内容'}</p>}
                 {block.mode === 'table' && (
                   <div className="ov-paper-custom-table" style={{ gridTemplateColumns: `repeat(${block.table.columns.length}, minmax(0, 1fr))` }}>
                     {block.table.columns.map((column, index) => (
@@ -1225,11 +1393,12 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
                 {block.mode === 'image' && (
                   <div className="ov-paper-media-grid">
                     {block.media.map((media) => (
-                      <figure key={media.id} className="ov-paper-figure">
+                      <figure key={media.id} className="ov-paper-figure" style={{ width: `${media.displayWidth ?? 100}%` }}>
                         <img src={media.src} alt={media.name || block.title} />
                         {media.caption && <figcaption>{media.caption}</figcaption>}
                       </figure>
                     ))}
+                    {block.media.length === 0 && <div className="ov-paper-empty">暂无图片</div>}
                   </div>
                 )}
               </section>

@@ -36,6 +36,7 @@ export interface MediaItem {
   src: string;
   name: string;
   caption: string;
+  displayWidth?: number;
   annotations: MediaAnnotation[];
 }
 
@@ -52,7 +53,17 @@ export interface ListeningMaterialItem {
   chinese: string;
 }
 
+export interface CommunicationGroup {
+  id: string;
+  label: string;
+  selectedStudents: string[];
+  teacherName: string;
+  scheduleText: string;
+  note: string;
+}
+
 export interface CommunicationPlan {
+  groups: CommunicationGroup[];
   selectedStudents: string[];
   teacherName: string;
   scheduleText: string;
@@ -66,6 +77,7 @@ export interface CommunicationRecord {
   teacherName: string;
   scheduleText: string;
   note: string;
+  groupLabel?: string;
   createdAt: number;
 }
 
@@ -106,6 +118,7 @@ export interface OverviewClassMemory {
   classCode: string;
   preferredCommunicationTeacher: string;
   preferredCommunicationSchedule: string;
+  communicationGroups: CommunicationGroup[];
   phaseChallenges: PhaseChallengeRow[];
   customBlocks: CustomBlock[];
   communicationHistory: CommunicationRecord[];

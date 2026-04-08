@@ -13,6 +13,35 @@ export function extractEnglishWords(raw: string): string[] {
   return uniqueWords(lineTokens);
 }
 
+export interface ListeningInputPair {
+  english: string;
+  chinese: string;
+}
+
+export function extractListeningPairs(raw: string): ListeningInputPair[] {
+  const pairs: ListeningInputPair[] = [];
+  const lines = raw.replace(/\r\n/g, '\n').split('\n');
+
+  for (const line of lines) {
+    const text = line.trim();
+    if (!text) continue;
+
+    const chunks = text.split(/[,，;；、/|]+/).map((chunk) => chunk.trim()).filter(Boolean);
+    for (const chunk of chunks) {
+      const englishMatch = chunk.match(/[A-Za-z][A-Za-z' -]*/)?.[0]?.trim() ?? '';
+      const chineseMatch = chunk.match(/[\u4e00-\u9fff][\u4e00-\u9fff（）()【】《》、，。！？：；\s-]*/)?.[0]?.trim() ?? '';
+
+      if (!englishMatch && !chineseMatch) continue;
+
+      if (englishMatch) {
+        pairs.push({ english: englishMatch, chinese: chineseMatch });
+      }
+    }
+  }
+
+  return pairs;
+}
+
 async function translateViaGoogle(word: string): Promise<string> {
   const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-CN&dt=t&q=${encodeURIComponent(word)}`;
   const response = await fetch(url);
@@ -55,12 +84,16 @@ async function translateWord(word: string): Promise<string> {
 }
 
 export async function buildListeningMaterials(raw: string): Promise<ListeningMaterialItem[]> {
-  const words = extractEnglishWords(raw);
+  const pairs = extractListeningPairs(raw);
+  const unique = uniqueWords(
+    pairs.map((pair) => pair.english).filter(Boolean),
+  );
+  const pairMap = new Map(pairs.filter((pair) => pair.english).map((pair) => [pair.english.toLowerCase(), pair.chinese]));
   const translated = await Promise.all(
-    words.map(async (word, index) => ({
+    unique.map(async (word, index) => ({
       id: `listen_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 5)}`,
       english: word,
-      chinese: await translateWord(word),
+      chinese: pairMap.get(word.toLowerCase())?.trim() || await translateWord(word),
     })),
   );
   return translated;

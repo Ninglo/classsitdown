@@ -138,16 +138,20 @@
 }
 
 .ov-student-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+  gap: 10px;
 }
 
 .ov-student-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 11px;
+  justify-content: flex-start;
+  cursor: pointer;
+  min-height: 42px;
+  width: 100%;
+  padding: 10px 14px;
   border-radius: 999px;
   border: 1px solid rgba(214, 220, 226, 0.95);
   background: #fff;
@@ -167,6 +171,9 @@
 
 .ov-student-chip input {
   margin: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--green-dark);
 }
 
 .ov-student-import {
@@ -247,7 +254,7 @@
 
 .ov-phase-editor-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
   align-items: start;
 }
@@ -280,11 +287,17 @@
   gap: 10px;
 }
 
+.ov-media-size-grid {
+  margin-top: -2px;
+}
+
 .ov-media-preview {
   position: relative;
   overflow: hidden;
   border-radius: 10px;
   background: rgba(246, 241, 231, 0.9);
+  max-width: 100%;
+  margin: 0 auto;
 }
 
 .ov-media-preview img {
@@ -345,6 +358,27 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ov-comm-group-list {
+  display: grid;
+  gap: 12px;
+}
+
+.ov-comm-group-card {
+  padding: 14px;
+  border: 1px solid rgba(220, 225, 230, 0.95);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 10px 28px rgba(64, 80, 96, 0.05);
+}
+
+.ov-comm-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   margin-bottom: 10px;
 }
 
@@ -576,6 +610,7 @@
   overflow: hidden;
   border: 1px solid var(--ov-theme-line);
   background: rgba(255, 255, 255, 0.92);
+  justify-self: center;
 }
 
 .ov-paper-figure img {
@@ -646,6 +681,17 @@
   color: var(--gray-600);
 }
 
+.ov-paper-comm-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.ov-paper-comm-group {
+  padding: 12px;
+  border: 1px solid var(--ov-theme-line);
+  background: #fff;
+}
+
 .ov-paper-comm-students {
   margin-top: 10px;
   padding: 12px;
@@ -664,6 +710,12 @@
   background: var(--ov-theme-border);
   border: 1px solid var(--ov-theme-border);
   overflow: hidden;
+}
+
+.ov-paper-empty {
+  padding: 10px 12px;
+  border: 1px dashed var(--ov-theme-line);
+  background: rgba(255, 255, 255, 0.88);
 }
 
 @media (max-width: 1280px) {

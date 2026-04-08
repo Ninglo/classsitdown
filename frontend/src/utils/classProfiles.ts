@@ -2,6 +2,14 @@ import type { ClassProfile, StudentInfo } from '../types';
 
 const STORAGE_KEY = 'amber_class_profiles';
 
+const STUDENT_NOISE_PATTERNS: RegExp[] = [
+  /^[:：\d\s.()（）\-_/\\]+$/,
+  /^(?:rows?|row|circular|paper|table|column|columns|header|footer|page|sheet|student|students|class|classroom|teacher|campus)$/i,
+  /(?:校区|座位|名单|班级|教室|课表|课堂|上课|下课|调课|排课)/,
+  /(?:周[一二三四五六日天]|星期[一二三四五六日天]|上午|下午|晚上|早上|中午)/,
+  /^\d{1,2}:\d{2}$/,
+];
+
 export function loadClassProfiles(): ClassProfile[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -18,6 +26,41 @@ function saveAll(profiles: ClassProfile[]): void {
 
 function normalizeClassCode(classCode: string): string {
   return String(classCode || '').trim().toUpperCase();
+}
+
+function normalizeStudentName(raw: unknown): string {
+  return String(raw ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\d.、)\]-]+\s*/, '')
+    .replace(/\s*[.。,，;；:：]+$/, '')
+    .trim();
+}
+
+function isLikelyStudentName(raw: unknown): boolean {
+  const normalized = normalizeStudentName(raw);
+  if (!normalized) return false;
+  if (normalized.length < 2 || normalized.length > 24) return false;
+  if (STUDENT_NOISE_PATTERNS.some((pattern) => pattern.test(normalized))) return false;
+
+  const hasChinese = /[\u4e00-\u9fff]/.test(normalized);
+  const looksEnglishName = /^[A-Za-z][A-Za-z' -]*$/.test(normalized);
+  if (!hasChinese && !looksEnglishName) return false;
+  if (looksEnglishName && normalized.split(/\s+/).length > 3) return false;
+
+  return true;
+}
+
+export function compareStudentNames(a: string, b: string): number {
+  return a.localeCompare(b, 'zh-Hans-CN', { sensitivity: 'base', numeric: true });
+}
+
+export function sortStudentNames(names: string[]): string[] {
+  return [...new Set(names.map((name) => normalizeStudentName(name)).filter((name) => name && isLikelyStudentName(name)))]
+    .sort(compareStudentNames);
+}
+
+function sortStudents(students: StudentInfo[]): StudentInfo[] {
+  return [...students].sort((a, b) => compareStudentNames(a.chineseName, b.chineseName));
 }
 
 export function getClassProfile(classCode: string): ClassProfile | null {
@@ -60,15 +103,19 @@ export function mergeStudents(
     updatedAt: Date.now(),
   };
 
-  const existingNames = new Map(profile.students.map((s) => [s.chineseName, s]));
+  const existingNames = new Map(profile.students.map((s) => [normalizeStudentName(s.chineseName), s]));
   const added: StudentInfo[] = [];
 
   for (const s of incoming) {
-    const existing = existingNames.get(s.chineseName);
+    const cleanName = normalizeStudentName(s.chineseName);
+    if (!isLikelyStudentName(cleanName)) continue;
+
+    const existing = existingNames.get(cleanName);
     if (!existing) {
-      profile.students.push(s);
-      existingNames.set(s.chineseName, s);
-      added.push(s);
+      const next = { ...s, chineseName: cleanName };
+      profile.students.push(next);
+      existingNames.set(cleanName, next);
+      added.push(next);
     } else {
       existing.studentId = existing.studentId || s.studentId;
       existing.englishName = existing.englishName || s.englishName;
@@ -78,6 +125,7 @@ export function mergeStudents(
 
   if (added.length > 0 || incoming.length > 0) {
     profile.updatedAt = Date.now();
+    profile.students = sortStudents(profile.students);
     saveClassProfile(profile);
   }
 
@@ -135,36 +183,47 @@ export function getStudentsFromSeating(classCode: string): StudentInfo[] {
       ...collectNamesFromArcGroups(config?.weekend?.arcGroups),
     ];
 
-    const uniqueNames = [...new Set(names)];
-    return uniqueNames.map((name, index) => ({
-      id: `seat_${matchedKey}_${index}_${name}`,
-      chineseName: name,
-    }));
+    const uniqueNames = sortStudentNames(names);
+    return uniqueNames
+      .filter(isLikelyStudentName)
+      .map((name, index) => ({
+        id: `seat_${matchedKey}_${index}_${name}`,
+        chineseName: name,
+      }));
   } catch {
     return [];
   }
 }
 
 export function getResolvedStudents(classCode: string): StudentInfo[] {
-  const profileStudents = getClassProfile(classCode)?.students ?? [];
-  const mergedNames = new Map(profileStudents.map((student) => [student.chineseName, student]));
+  const profileStudents = sortStudents((getClassProfile(classCode)?.students ?? []).filter((student) =>
+    isLikelyStudentName(student.chineseName),
+  ));
+  const mergedNames = new Map<string, StudentInfo>();
 
-  for (const student of getStudentsFromSeating(classCode)) {
-    if (!mergedNames.has(student.chineseName)) mergedNames.set(student.chineseName, student);
+  for (const student of [...profileStudents, ...getStudentsFromSeating(classCode), ...getStudentsFromSeatingData(classCode)]) {
+    const cleanName = normalizeStudentName(student.chineseName);
+    if (!isLikelyStudentName(cleanName)) continue;
+
+    const existing = mergedNames.get(cleanName);
+    if (!existing) {
+      mergedNames.set(cleanName, { ...student, chineseName: cleanName });
+      continue;
+    }
+
+    mergedNames.set(cleanName, {
+      ...existing,
+      studentId: existing.studentId || student.studentId,
+      englishName: existing.englishName || student.englishName,
+      aliases: [...new Set([...(existing.aliases || []), ...(student.aliases || [])])],
+    });
   }
-  for (const student of getStudentsFromSeatingData(classCode)) {
-    if (!mergedNames.has(student.chineseName)) mergedNames.set(student.chineseName, student);
-  }
 
-  const merged = [...mergedNames.values()];
-  if (merged.length === 0) return [];
-
-  mergeStudents(classCode, merged);
-  return getClassProfile(classCode)?.students ?? merged;
+  return sortStudents([...mergedNames.values()]);
 }
 
 export function importStudentNames(classCode: string, names: string[]): StudentInfo[] {
-  const cleaned = [...new Set(names.map((name) => name.trim()).filter(Boolean))];
+  const cleaned = sortStudentNames(names);
   if (cleaned.length === 0) return getResolvedStudents(classCode);
 
   const incoming: StudentInfo[] = cleaned.map((name, index) => ({
@@ -174,13 +233,6 @@ export function importStudentNames(classCode: string, names: string[]): StudentI
 
   mergeStudents(classCode, incoming);
   return getResolvedStudents(classCode);
-}
-
-function normalizeStudentName(raw: unknown): string {
-  return String(raw ?? '')
-    .replace(/\s+/g, ' ')
-    .replace(/^[\d.、)\]-]+\s*/, '')
-    .trim();
 }
 
 function createStudentRecord(classCode: string, chineseName: string): StudentInfo {
@@ -210,7 +262,7 @@ function createPreciseStudentRecord(
 function collectNamesFromValue(value: unknown, names: Set<string>): void {
   if (typeof value === 'string') {
     const normalized = normalizeStudentName(value);
-    if (normalized) names.add(normalized);
+    if (isLikelyStudentName(normalized)) names.add(normalized);
     return;
   }
 
@@ -238,8 +290,8 @@ export function getStudentsFromSeatingData(classCode: string): StudentInfo[] {
     const payload = all[resolvedKey];
     collectNamesFromValue(payload, names);
 
-    return [...names]
-      .filter((name) => name.length > 0 && name.length <= 32)
+    return sortStudentNames([...names])
+      .filter(isLikelyStudentName)
       .map((name) => createStudentRecord(classCode, name));
   } catch {
     return [];
@@ -247,13 +299,15 @@ export function getStudentsFromSeatingData(classCode: string): StudentInfo[] {
 }
 
 export function getAvailableStudents(classCode: string): StudentInfo[] {
-  const profileStudents = getClassProfile(classCode)?.students ?? [];
+  const profileStudents = sortStudents((getClassProfile(classCode)?.students ?? []).filter((student) =>
+    isLikelyStudentName(student.chineseName),
+  ));
   if (profileStudents.length > 0) return profileStudents;
-  return getStudentsFromSeatingData(classCode);
+  return sortStudents(getStudentsFromSeatingData(classCode));
 }
 
 export function saveStudentList(classCode: string, studentNames: string[]): ClassProfile {
-  const uniqueNames = [...new Set(studentNames.map((name) => normalizeStudentName(name)).filter(Boolean))];
+  const uniqueNames = sortStudentNames(studentNames);
   return updateClassProfile(classCode, {
     students: uniqueNames.map((name) => createStudentRecord(classCode, name)),
   });
@@ -270,7 +324,7 @@ export function savePreciseStudentList(
       chineseName: normalizeStudentName(student.chineseName),
       englishName: String(student.englishName || '').trim(),
     }))
-    .filter((student) => student.chineseName);
+    .filter((student) => student.chineseName && isLikelyStudentName(student.chineseName));
 
   const deduped = new Map<string, StudentInfo>();
   for (const student of cleaned) {
@@ -281,7 +335,7 @@ export function savePreciseStudentList(
   }
 
   return updateClassProfile(normalizedCode, {
-    students: [...deduped.values()],
+    students: sortStudents([...deduped.values()]),
   });
 }
 
@@ -291,7 +345,7 @@ export function upsertPreciseStudents(
 ): ClassProfile {
   const incoming = students
     .map((student) => createPreciseStudentRecord(classCode, String(student.studentId || ''), student.chineseName, student.englishName))
-    .filter((student) => student.chineseName);
+    .filter((student) => isLikelyStudentName(student.chineseName));
   mergeStudents(classCode, incoming);
   return getClassProfile(classCode) ?? updateClassProfile(classCode, {});
 }

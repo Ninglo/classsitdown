@@ -1,6 +1,7 @@
 import type { DayOfWeek } from '../types';
 import type {
   ChallengeItem,
+  CommunicationGroup,
   CommunicationPlan,
   CommunicationRecord,
   CustomBlock,
@@ -13,6 +14,7 @@ import type {
   PhaseChallengeKey,
   PhaseChallengeRow,
 } from '../types/overview';
+import { sortStudentNames } from './classProfiles';
 
 const DRAFT_STORAGE_KEY = 'amber_overview_drafts_v2';
 const MEMORY_STORAGE_KEY = 'amber_overview_memory_v2';
@@ -42,6 +44,7 @@ export function createMediaItem(name = ''): MediaItem {
     src: '',
     name,
     caption: '',
+    displayWidth: 100,
     annotations: [],
   };
 }
@@ -63,6 +66,66 @@ export function createListeningItem(): ListeningMaterialItem {
   };
 }
 
+function createCommunicationGroup(memory?: OverviewClassMemory): CommunicationGroup {
+  return {
+    id: uid('comm_group'),
+    label: '第1组',
+    selectedStudents: [],
+    teacherName: memory?.preferredCommunicationTeacher ?? '',
+    scheduleText: memory?.preferredCommunicationSchedule ?? '',
+    note: '',
+  };
+}
+
+function cloneCommunicationGroup(group: CommunicationGroup): CommunicationGroup {
+  return {
+    ...group,
+    selectedStudents: sortStudentNames(group.selectedStudents),
+  };
+}
+
+export function normalizeCommunicationPlan(plan: CommunicationPlan): CommunicationPlan {
+  const groups = plan.groups.length > 0 ? plan.groups.map(cloneCommunicationGroup) : [createCommunicationGroup()];
+  return {
+    groups,
+    selectedStudents: sortStudentNames(groups.flatMap((group) => group.selectedStudents)),
+    teacherName: String(plan.teacherName || ''),
+    scheduleText: String(plan.scheduleText || ''),
+    note: String(plan.note || ''),
+  };
+}
+
+function normalizeStoredCommunicationPlan(raw: unknown): CommunicationPlan {
+  const plan = raw && typeof raw === 'object' ? (raw as Partial<CommunicationPlan>) : {};
+  const groups = Array.isArray(plan.groups) && plan.groups.length > 0
+    ? plan.groups
+        .filter((group): group is CommunicationGroup => Boolean(group && typeof group === 'object'))
+        .map((group, index) => cloneCommunicationGroup({
+          id: String(group.id || uid('comm_group')),
+          label: String(group.label || `第${index + 1}组`),
+          selectedStudents: Array.isArray(group.selectedStudents) ? group.selectedStudents.map((name) => String(name || '').trim()).filter(Boolean) : [],
+          teacherName: String(group.teacherName || ''),
+          scheduleText: String(group.scheduleText || ''),
+          note: String(group.note || ''),
+        }))
+    : [{
+        id: uid('comm_group'),
+        label: '第1组',
+        selectedStudents: sortStudentNames(Array.isArray(plan.selectedStudents) ? plan.selectedStudents.map((name) => String(name || '').trim()).filter(Boolean) : []),
+        teacherName: String(plan.teacherName || ''),
+        scheduleText: String(plan.scheduleText || ''),
+        note: String(plan.note || ''),
+      }];
+
+  return normalizeCommunicationPlan({
+    groups,
+    selectedStudents: Array.isArray(plan.selectedStudents) ? plan.selectedStudents.map((name) => String(name || '').trim()).filter(Boolean) : [],
+    teacherName: String(plan.teacherName || ''),
+    scheduleText: String(plan.scheduleText || ''),
+    note: String(plan.note || ''),
+  });
+}
+
 export function createCustomBlock(): CustomBlock {
   return {
     id: uid('custom'),
@@ -78,12 +141,16 @@ export function createCustomBlock(): CustomBlock {
 }
 
 function createCommunicationPlan(memory?: OverviewClassMemory): CommunicationPlan {
-  return {
+  const groups = memory?.communicationGroups?.length
+    ? memory.communicationGroups.map(cloneCommunicationGroup)
+    : [createCommunicationGroup(memory)];
+  return normalizeCommunicationPlan({
+    groups,
     selectedStudents: [],
     teacherName: memory?.preferredCommunicationTeacher ?? '',
     scheduleText: memory?.preferredCommunicationSchedule ?? '',
     note: '',
-  };
+  });
 }
 
 function clonePhaseChallenge(row: PhaseChallengeRow): PhaseChallengeRow {
@@ -108,7 +175,7 @@ function createDefaultPhaseChallenges(studentNames: string[], memory?: OverviewC
   const validNames = new Set(studentNames);
   return remembered.map((row) => ({
     ...row,
-    selectedStudents: row.selectedStudents.filter((name) => validNames.has(name)),
+    selectedStudents: sortStudentNames(row.selectedStudents.filter((name) => validNames.has(name))),
   }));
 }
 
@@ -121,6 +188,7 @@ function cloneCustomBlock(block: CustomBlock): CustomBlock {
     },
     media: block.media.map((item) => ({
       ...item,
+      displayWidth: item.displayWidth ?? 100,
       annotations: item.annotations.map((annotation) => ({ ...annotation })),
     })),
   };
@@ -135,7 +203,12 @@ export function loadDraft(classCode: string, week: number): OverviewContent | nu
     const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
     if (!raw) return null;
     const drafts = JSON.parse(raw) as Record<string, OverviewDraft>;
-    return drafts[`${classCode}_W${week}`]?.content ?? null;
+    const content = drafts[`${classCode}_W${week}`]?.content ?? null;
+    if (!content) return null;
+    return {
+      ...content,
+      communicationPlan: normalizeStoredCommunicationPlan((content as OverviewContent).communicationPlan),
+    };
   } catch {
     return null;
   }
@@ -150,7 +223,10 @@ export function saveDraft(content: OverviewContent): void {
     const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
     const drafts = raw ? (JSON.parse(raw) as Record<string, OverviewDraft>) : {};
     drafts[`${content.classCode}_W${content.week}`] = {
-      content,
+      content: {
+        ...content,
+        communicationPlan: normalizeCommunicationPlan(content.communicationPlan),
+      },
       updatedAt: Date.now(),
     };
     saveDraftMap(drafts);
@@ -226,7 +302,7 @@ export function syncPhaseChallenges(
   const valid = new Set(studentNames);
   return phaseChallenges.map((row) => ({
     ...row,
-    selectedStudents: row.selectedStudents.filter((name) => valid.has(name)),
+    selectedStudents: sortStudentNames(row.selectedStudents.filter((name) => valid.has(name))),
   }));
 }
 
@@ -235,6 +311,7 @@ export function rememberReusableContent(content: OverviewContent, studentNames: 
     classCode: content.classCode,
     preferredCommunicationTeacher: '',
     preferredCommunicationSchedule: '',
+    communicationGroups: [],
     phaseChallenges: [],
     customBlocks: [],
     communicationHistory: [],
@@ -242,13 +319,18 @@ export function rememberReusableContent(content: OverviewContent, studentNames: 
   };
 
   const validNames = new Set(studentNames);
+  const communicationPlan = normalizeCommunicationPlan(content.communicationPlan);
   const nextMemory: OverviewClassMemory = {
     ...memory,
-    preferredCommunicationTeacher: content.communicationPlan.teacherName.trim(),
-    preferredCommunicationSchedule: content.communicationPlan.scheduleText.trim(),
+    preferredCommunicationTeacher: communicationPlan.teacherName.trim(),
+    preferredCommunicationSchedule: communicationPlan.groups[0]?.scheduleText.trim() ?? '',
+    communicationGroups: communicationPlan.groups.map((group) => ({
+      ...cloneCommunicationGroup(group),
+      selectedStudents: sortStudentNames(group.selectedStudents.filter((name) => validNames.has(name))),
+    })),
     phaseChallenges: content.phaseChallenges.map((row) => ({
       ...row,
-      selectedStudents: row.selectedStudents.filter((name) => validNames.has(name)),
+      selectedStudents: sortStudentNames(row.selectedStudents.filter((name) => validNames.has(name))),
     })),
     customBlocks: content.customBlocks.map(cloneCustomBlock),
     updatedAt: Date.now(),
@@ -265,6 +347,7 @@ export function addCommunicationRecord(
     classCode,
     preferredCommunicationTeacher: '',
     preferredCommunicationSchedule: '',
+    communicationGroups: [],
     phaseChallenges: [],
     customBlocks: [],
     communicationHistory: [],
@@ -304,5 +387,9 @@ export function getCommunicationStats(classCode: string, studentNames: string[])
   const contacted = studentNames.filter((name) => Boolean(latestByStudent[name]));
   const pending = studentNames.filter((name) => !latestByStudent[name]);
 
-  return { contacted, pending, latestByStudent };
+  return {
+    contacted: sortStudentNames(contacted),
+    pending: sortStudentNames(pending),
+    latestByStudent,
+  };
 }
