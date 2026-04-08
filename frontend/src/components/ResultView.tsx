@@ -29,6 +29,13 @@ function fmtStar(mp: number, isMax: boolean): string {
   return `✨ ${text} ✨`;
 }
 
+function getUniqueMax(values: number[]): number | null {
+  const positives = values.filter((value) => value > 0);
+  if (positives.length === 0) return null;
+  const max = Math.max(...positives);
+  return positives.filter((value) => value === max).length === 1 ? max : null;
+}
+
 function sortResults(list: MPBreakdown[], key: SortKey): MPBreakdown[] {
   const r = [...list];
   switch (key) {
@@ -106,21 +113,22 @@ ${scheme2Text}
 
   const sorted = sortResults(results, sortKey);
   const totalMP = results.reduce((s, r) => s + r.total, 0);
+  const maxBasic = showBasic ? getUniqueMax(results.map((r) => r.基础落实)) : null;
+  const maxDaily = showDaily ? getUniqueMax(results.map((r) => r.每日开口)) : null;
+  const maxClass = showClass ? getUniqueMax(results.map((r) => r.课堂参与)) : null;
+  const maxBonusAmounts = bonusCols.map(b =>
+    getUniqueMax(results.map((r) => getBonusAmount(r.studentId, b)))
+  );
+  const maxTotal = getUniqueMax(results.map((r) => r.total));
 
   const medalMap = new Map<string, string>(
-    [...results]
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 3)
-      .map((r, i) => [r.studentId, i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'])
+    maxTotal === null
+      ? []
+      : [...results]
+          .sort((a, b) => b.total - a.total)
+          .slice(0, 3)
+          .map((r, i) => [r.studentId, i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'])
   );
-
-  const maxBasic = showBasic ? Math.max(...results.map(r => r.基础落实)) : 0;
-  const maxDaily = showDaily ? Math.max(...results.map(r => r.每日开口)) : 0;
-  const maxClass = showClass ? Math.max(...results.map(r => r.课堂参与)) : 0;
-  const maxBonusAmounts = bonusCols.map(b =>
-    Math.max(...results.map(r => getBonusAmount(r.studentId, b)))
-  );
-  const maxTotal = Math.max(...results.map(r => r.total));
 
   async function handleDownloadImage() {
     if (!cardRef.current) return;
@@ -280,14 +288,14 @@ ${scheme2Text}
                   </td>
                   <td className="col-name-en">{r.englishName}</td>
                   <td className="col-name-zh">{r.chineseName}</td>
-                  {showBasic && <td className={r.基础落实 > 0 && r.基础落实 === maxBasic ? 'col-star' : ''}>{fmtStar(r.基础落实, r.基础落实 === maxBasic)}</td>}
-                  {showDaily && <td className={r.每日开口 > 0 && r.每日开口 === maxDaily ? 'col-star' : ''}>{fmtStar(r.每日开口, r.每日开口 === maxDaily)}</td>}
-                  {showClass && <td className={r.课堂参与 > 0 && r.课堂参与 === maxClass ? 'col-star' : ''}>{fmtStar(r.课堂参与, r.课堂参与 === maxClass)}</td>}
+                  {showBasic && <td className={maxBasic !== null && r.基础落实 === maxBasic ? 'col-star' : ''}>{fmtStar(r.基础落实, maxBasic !== null && r.基础落实 === maxBasic)}</td>}
+                  {showDaily && <td className={maxDaily !== null && r.每日开口 === maxDaily ? 'col-star' : ''}>{fmtStar(r.每日开口, maxDaily !== null && r.每日开口 === maxDaily)}</td>}
+                  {showClass && <td className={maxClass !== null && r.课堂参与 === maxClass ? 'col-star' : ''}>{fmtStar(r.课堂参与, maxClass !== null && r.课堂参与 === maxClass)}</td>}
                   {bonusCols.map((b, bi) => {
                     const amt = getBonusAmount(r.studentId, b);
-                    return <td key={b.name} className={amt > 0 && amt === maxBonusAmounts[bi] ? 'col-star' : ''}>{fmtStar(amt, amt === maxBonusAmounts[bi])}</td>;
+                    return <td key={b.name} className={maxBonusAmounts[bi] !== null && amt === maxBonusAmounts[bi] ? 'col-star' : ''}>{fmtStar(amt, maxBonusAmounts[bi] !== null && amt === maxBonusAmounts[bi])}</td>;
                   })}
-                  <td className={`col-total-val${r.total === maxTotal && r.total > 0 ? ' col-star' : ''}`}>{fmtStar(r.total, r.total === maxTotal)}</td>
+                  <td className={`col-total-val${maxTotal !== null && r.total === maxTotal ? ' col-star' : ''}`}>{fmtStar(r.total, maxTotal !== null && r.total === maxTotal)}</td>
                 </tr>
               ))}
             </tbody>
