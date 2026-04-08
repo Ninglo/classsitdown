@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import type { ClassInfo, Module, StudentData, MPBreakdown, SchemeId, BonusItem, SavedCustomScheme, SchemeSettings } from '../types';
-import { parseBasicFile, parseDailyCheckFile } from '../utils/parseExcel';
+import type { ClassInfo, Module, StudentData, MPBreakdown, SchemeId, BonusItem, SavedCustomScheme, SchemeSettings, StudentRecord } from '../types';
+import { generateOutputExcel, parseBasicFile, parseDailyCheckFile } from '../utils/parseExcel';
 import { calculateMP, SCHEMES } from '../utils/calculateMP';
 import { getCurrentWeek } from '../utils/weekNumber';
 import { loadSavedSchemes, saveScheme, deleteScheme } from '../utils/customScheme';
@@ -30,6 +30,92 @@ const MODULE_REQUIRED: Record<Module, boolean> = {
   课堂参与: false,
   个性化奖励: false,
 };
+
+const QUICK_ROSTER_KEY = 'amber_mp_quick_rosters_v1';
+
+function normalizeStudentName(raw: string): string {
+  return String(raw || '').replace(/\s+/g, ' ').trim();
+}
+
+function saveQuickRoster(classCode: string, students: StudentData[]) {
+  try {
+    const key = String(classCode || '').trim().toUpperCase();
+    if (!key || students.length === 0) return;
+    const raw = localStorage.getItem(QUICK_ROSTER_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    all[key] = students.map((student) => ({
+      studentId: student.studentId,
+      chineseName: student.chineseName,
+      englishName: student.englishName,
+      classCode: key,
+    }));
+    localStorage.setItem(QUICK_ROSTER_KEY, JSON.stringify(all));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function loadQuickRoster(classCode: string): StudentRecord[] {
+  try {
+    const key = String(classCode || '').trim().toUpperCase();
+    if (!key) return [];
+    const raw = localStorage.getItem(QUICK_ROSTER_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    return Array.isArray(all[key]) ? all[key] : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseQuickRewardText(raw: string): Array<{ chineseName: string; amount: number }> {
+  return raw
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(/^(.+?)[\s,，:：\-]+(-?\d+(?:\.\d+)?)$/);
+      if (!match) return null;
+      return {
+        chineseName: normalizeStudentName(match[1]),
+        amount: Number(match[2]),
+      };
+    })
+    .filter((item): item is { chineseName: string; amount: number } => Boolean(item && item.chineseName));
+}
+
+function buildQuickTemplateRows(roster: StudentRecord[], rewards: Array<{ chineseName: string; amount: number }>): {
+  students: StudentData[];
+  mpMap: Map<string, number>;
+  missingNames: string[];
+} {
+  const rosterMap = new Map(
+    roster.map((student) => [normalizeStudentName(student.chineseName), student]),
+  );
+  const students: StudentData[] = [];
+  const mpMap = new Map<string, number>();
+  const missingNames: string[] = [];
+
+  for (const reward of rewards) {
+    const hit = rosterMap.get(reward.chineseName);
+    if (!hit) {
+      missingNames.push(reward.chineseName);
+      continue;
+    }
+    students.push({
+      studentId: hit.studentId,
+      chineseName: hit.chineseName,
+      englishName: hit.englishName || '',
+      classCode: hit.classCode,
+      resources: [],
+      dailyCheckIns: 0,
+      classParticipation: 0,
+      bonusItems: [],
+    });
+    mpMap.set(hit.studentId, reward.amount);
+  }
+
+  return { students, mpMap, missingNames };
+}
 
 export default function DistributionFlow({ classInfo, onBack, onSessionExpired }: Props) {
   const isManual = classInfo.id === 'manual';
@@ -78,6 +164,7 @@ export default function DistributionFlow({ classInfo, onBack, onSessionExpired }
         bonusItems: [],
       }));
 
+      saveQuickRoster(parsed.classCode || classInfo.name || manualCode, stud);
       setStudents(stud);
       setStep(3);
     } catch (err) {
@@ -160,6 +247,7 @@ export default function DistributionFlow({ classInfo, onBack, onSessionExpired }
       )}
       {step === 2 && (
         <StepUpload
+          classCode={displayCode}
           modules={selectedModules}
           basicFile={basicFile}
           dailyFile={dailyFile}
@@ -263,6 +351,7 @@ function StepModules({
 }
 
 function StepUpload({
+  classCode,
   modules,
   basicFile,
   dailyFile,
@@ -272,6 +361,7 @@ function StepUpload({
   onNext,
   loading,
 }: {
+  classCode: string;
   modules: Set<Module>;
   basicFile: File | null;
   dailyFile: File | null;
@@ -281,6 +371,44 @@ function StepUpload({
   onNext: () => void;
   loading: boolean;
 }) {
+  const rememberedRoster = loadQuickRoster(classCode);
+  const [quickInput, setQuickInput] = useState('');
+  const [quickMessage, setQuickMessage] = useState('');
+
+  function downloadQuickTemplate() {
+    if (!rememberedRoster.length) {
+      setQuickMessage('这个班目前还没有记住学号名单。先完整上传一次基础落实文件，后面就能走快捷模式。');
+      return;
+    }
+    const rewards = parseQuickRewardText(quickInput);
+    if (!rewards.length) {
+      setQuickMessage('先粘贴“中文名 + 数量”，一行一个，例如：李晓彤 0.5');
+      return;
+    }
+
+    const { students, mpMap, missingNames } = buildQuickTemplateRows(rememberedRoster, rewards);
+    if (!students.length) {
+      setQuickMessage('没有匹配到可用学生，请检查中文名是否和系统里一致。');
+      return;
+    }
+
+    const buffer = generateOutputExcel(students, mpMap);
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${classCode}_快捷MP模板.xlsx`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 5000);
+
+    setQuickMessage(
+      missingNames.length
+        ? `已生成模板，未匹配：${missingNames.join('、')}`
+        : `已生成 ${students.length} 人的标准模板。`,
+    );
+  }
+
   return (
     <div className="step-card card">
       <h3 className="step-heading">上传数据文件</h3>
@@ -303,6 +431,32 @@ function StepUpload({
             onChange={onDailyFile}
           />
         )}
+      </div>
+
+      <div className="quick-template-box">
+        <div className="quick-template-head">
+          <div>
+            <strong>快捷生成 MP 标准模板</strong>
+            <p>如果这个班已经记住过学号和名单，这里直接粘贴“中文名 + 数量”就能出标准 Excel。</p>
+          </div>
+          <span className={`quick-template-badge${rememberedRoster.length ? ' active' : ''}`}>
+            {rememberedRoster.length ? `已记住 ${rememberedRoster.length} 人` : '暂未记住名单'}
+          </span>
+        </div>
+        <textarea
+          className="input-field quick-template-input"
+          rows={6}
+          placeholder={'李晓彤 0.5\n周子然 1\n王一诺 0.8'}
+          value={quickInput}
+          onChange={(event) => setQuickInput(event.target.value)}
+        />
+        <div className="quick-template-actions">
+          <button className="btn btn-ghost" type="button" onClick={downloadQuickTemplate}>
+            直接生成标准模板
+          </button>
+          <span className="quick-template-hint">先完整传过一次基础落实文件，这个快捷入口以后就能反复用。</span>
+        </div>
+        {quickMessage && <div className="quick-template-message">{quickMessage}</div>}
       </div>
 
       <div className="step-actions">
