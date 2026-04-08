@@ -14,6 +14,39 @@ export default function NewestSeatingFrame({ classCode, onBack, active }: Props)
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    type PreloadAsset = {
+      rel: string;
+      href: string;
+      as?: string;
+      type?: string;
+      crossOrigin?: '' | 'anonymous' | 'use-credentials';
+    };
+
+    const assets: PreloadAsset[] = [
+      { rel: 'modulepreload', href: '/seating/assets/index-BJkVfsNQ.js' },
+      { rel: 'preload', href: '/seating/assets/index-C4B9Ofc0.css', as: 'style' },
+      { rel: 'preload', href: '/seating/fonts/SmileySans-Oblique.ttf', as: 'font', type: 'font/ttf', crossOrigin: 'anonymous' },
+    ];
+
+    const created = assets.map((asset) => {
+      const existing = document.head.querySelector(`link[href="${asset.href}"]`);
+      if (existing) return null;
+      const link = document.createElement('link');
+      link.rel = asset.rel;
+      link.href = asset.href;
+      if (asset.as) link.as = asset.as;
+      if (asset.type) link.type = asset.type;
+      if (asset.crossOrigin !== undefined) link.crossOrigin = asset.crossOrigin;
+      document.head.appendChild(link);
+      return link;
+    });
+
+    return () => {
+      created.forEach((link) => link?.remove());
+    };
+  }, []);
+
+  useEffect(() => {
     setLoaded(false);
   }, [src]);
 
