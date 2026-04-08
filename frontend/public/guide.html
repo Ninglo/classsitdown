@@ -609,7 +609,7 @@
       <section class="section" id="batch-import">
         <div class="section-head">
           <h3>导入多个班级座位表</h3>
-          <p>这里先做队列和识别草稿，后续再接更完整的 OCR / 解析流程。</p>
+          <p>现在支持图片、截图、拍照、PDF 和文本自动提取；识别不稳时也能手动补文字继续导入。</p>
         </div>
 
         <div class="import-card">
@@ -632,14 +632,14 @@
             <section class="panel">
               <h4>1. 收文件 / 收文本</h4>
               <p class="help">
-                先把多个文件拖进来。图片和 PDF 会先进入队列，文本文件会尝试自动提取。
-                如果你已经有 OCR 结果，就直接贴到右边，点“识别并加入队列”。
+                先把多个文件拖进来。图片、截图、拍照图片和 PDF 会自动识别，
+                文本文件会直接抽取名单；如果你已经有 OCR 结果，也可以直接贴到右边。
               </p>
               <input class="file-input" id="seatingFiles" type="file" multiple accept=".png,.jpg,.jpeg,.webp,.pdf,.txt,.md,.json" />
-              <textarea class="text-area" id="ocrText" placeholder="把多个班级的座位表 OCR 文本贴在这里。建议每个班级之间空一行，文件名或标题里带上班级号，例如：E102 / G205 / A301。"></textarea>
+              <textarea class="text-area" id="ocrText" placeholder="把多个班级的座位表 OCR 文本贴在这里。也支持直接在这里粘贴截图 / 图片。建议每个班级之间空一行，文件名或标题里带上班级号，例如：E102 / G205 / A301。"></textarea>
               <div class="queue-actions" style="margin-top: 12px;">
                 <button class="primary-btn" id="parseTextBtn" type="button">识别并加入队列</button>
-                <button class="ghost-btn" id="appendFilesBtn" type="button">把当前文件加入队列</button>
+                <button class="ghost-btn" id="appendFilesBtn" type="button">识别当前文件并加入队列</button>
               </div>
               <div class="status" id="statusText">还没有导入内容。</div>
             </section>
@@ -667,6 +667,7 @@
     (function () {
       const PROFILE_KEY = 'amber_class_profiles';
       const QUEUE_KEY = 'amber_seating_batch_queue';
+      const OCR_LANG = 'chi_sim+eng';
 
       const fileInput = document.getElementById('seatingFiles');
       const textArea = document.getElementById('ocrText');
@@ -677,6 +678,8 @@
       const clearQueueBtn = document.getElementById('clearQueueBtn');
       const loadQueueBtn = document.getElementById('loadQueueBtn');
       const fillDemoBtn = document.getElementById('fillDemoBtn');
+      let tesseractLoader = null;
+      let pdfLoader = null;
 
       function loadJson(key, fallback) {
         try {
@@ -689,6 +692,116 @@
 
       function saveJson(key, value) {
         localStorage.setItem(key, JSON.stringify(value));
+      }
+
+      function appendStatus(message) {
+        statusText.textContent = message;
+      }
+
+      function loadScript(src) {
+        return new Promise((resolve, reject) => {
+          const existing = document.querySelector(`script[data-src="${src}"]`);
+          if (existing) {
+            existing.addEventListener('load', resolve, { once: true });
+            existing.addEventListener('error', reject, { once: true });
+            if (existing.dataset.loaded === 'true') resolve();
+            return;
+          }
+          const script = document.createElement('script');
+          script.src = src;
+          script.async = true;
+          script.dataset.src = src;
+          script.onload = () => {
+            script.dataset.loaded = 'true';
+            resolve();
+          };
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+      }
+
+      async function ensureTesseract() {
+        if (window.Tesseract) return window.Tesseract;
+        if (!tesseractLoader) {
+          tesseractLoader = loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
+        }
+        await tesseractLoader;
+        return window.Tesseract;
+      }
+
+      async function ensurePdfJs() {
+        if (window.pdfjsLib) return window.pdfjsLib;
+        if (!pdfLoader) {
+          pdfLoader = loadScript('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js');
+        }
+        await pdfLoader;
+        const pdfjsLib = window.pdfjsLib;
+        if (pdfjsLib?.GlobalWorkerOptions) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+        }
+        return pdfjsLib;
+      }
+
+      async function recognizeImageBlob(blob, label) {
+        const Tesseract = await ensureTesseract();
+        const result = await Tesseract.recognize(blob, OCR_LANG, {
+          logger(message) {
+            if (message.status === 'recognizing text') {
+              appendStatus(`正在识别 ${label} · ${Math.round((message.progress || 0) * 100)}%`);
+            } else if (message.status) {
+              appendStatus(`正在识别 ${label} · ${message.status}`);
+            }
+          },
+        });
+        return String(result?.data?.text || '');
+      }
+
+      async function extractTextFromPdf(file) {
+        const pdfjsLib = await ensurePdfJs();
+        const buffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
+        let mergedText = '';
+
+        for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex += 1) {
+          appendStatus(`正在读取 ${file.name} · 第 ${pageIndex}/${pdf.numPages} 页`);
+          const page = await pdf.getPage(pageIndex);
+          const textContent = await page.getTextContent();
+          const pageText = (textContent.items || [])
+            .map((item) => String(item.str || '').trim())
+            .filter(Boolean)
+            .join(' ');
+
+          if (pageText.length >= 20) {
+            mergedText += `\n${pageText}\n`;
+            continue;
+          }
+
+          const viewport = page.getViewport({ scale: 2 });
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          await page.render({ canvasContext: context, viewport }).promise;
+          const dataUrl = canvas.toDataURL('image/png');
+          const response = await fetch(dataUrl);
+          const blob = await response.blob();
+          mergedText += `\n${await recognizeImageBlob(blob, `${file.name} 第${pageIndex}页`)}\n`;
+        }
+
+        return mergedText.trim();
+      }
+
+      async function extractTextFromFile(file) {
+        if (/\.txt$|\.md$|\.json$/i.test(file.name) || /text\//i.test(file.type)) {
+          return file.text();
+        }
+        if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') {
+          return extractTextFromPdf(file);
+        }
+        if (/image\//i.test(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name)) {
+          return recognizeImageBlob(file, file.name);
+        }
+        return '';
       }
 
       function normalizeClassCode(raw) {
@@ -784,7 +897,7 @@
           const meta = [
             item.classCode ? `班级 ${item.classCode}` : '班级未识别',
             item.source === 'file' ? '文件队列' : 'OCR 文本',
-            item.status === 'written' ? '已写入' : item.status === 'ready' ? '可写入' : '待处理'
+            item.status === 'written' ? '已写入' : item.status === 'ready' ? '可写入' : item.status === 'error' ? '识别失败' : '待处理'
           ];
           return `
             <article class="queue-item" data-index="${index}">
@@ -864,18 +977,18 @@
         renderQueue();
       }
 
-      async function appendSelectedFiles() {
-        const files = Array.from(fileInput.files || []);
+      async function processFiles(files, source = 'file') {
         if (!files.length) {
           statusText.textContent = '先选文件，再加入队列。';
           return;
         }
 
         const entries = [];
-        for (const file of files) {
+        for (const [index, file] of files.entries()) {
+          appendStatus(`正在处理 ${index + 1}/${files.length} · ${file.name}`);
           const base = {
             id: `file_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            source: 'file',
+            source,
             label: file.name,
             fileName: file.name,
             classCode: extractClassCode(file.name),
@@ -884,24 +997,32 @@
             status: 'draft',
           };
 
-          if (/\.txt$|\.md$|\.json$/i.test(file.name) || /text\//i.test(file.type)) {
-            const text = await file.text();
+          try {
+            const text = await extractTextFromFile(file);
             const names = extractNamesFromText(text);
             entries.push({
               ...base,
               text,
               names,
               classCode: base.classCode || extractClassCode(text),
-              status: names.length ? 'ready' : 'draft',
+              status: names.length ? 'ready' : text.trim() ? 'draft' : 'error',
             });
-          } else {
+          } catch (error) {
             entries.push(base);
+            entries[entries.length - 1].status = 'error';
+            entries[entries.length - 1].text = '';
+            entries[entries.length - 1].error = String(error?.message || error || '识别失败');
           }
         }
 
-        addItems(entries, 'file');
+        addItems(entries, source);
+        appendStatus(`已处理 ${entries.length} 个文件，图片 / PDF 已自动识别并入队。`);
+      }
+
+      async function appendSelectedFiles() {
+        const files = Array.from(fileInput.files || []);
+        await processFiles(files, 'file');
         fileInput.value = '';
-        statusText.textContent = `已加入 ${entries.length} 个文件到队列。`;
       }
 
       function appendTextBlocks() {
@@ -974,8 +1095,16 @@
         renderQueue();
       }
 
+      async function handlePaste(event) {
+        const files = Array.from(event.clipboardData?.files || []).filter((file) => file.type.startsWith('image/'));
+        if (!files.length) return;
+        event.preventDefault();
+        appendStatus(`检测到 ${files.length} 张粘贴图片，正在识别...`);
+        await processFiles(files, 'paste');
+      }
+
       fileInput.addEventListener('change', () => {
-        statusText.textContent = `已选 ${fileInput.files?.length || 0} 个文件，点“把当前文件加入队列”即可保存。`;
+        statusText.textContent = `已选 ${fileInput.files?.length || 0} 个文件，点“识别当前文件并加入队列”即可开始。`;
       });
       parseTextBtn.addEventListener('click', appendTextBlocks);
       appendFilesBtn.addEventListener('click', appendSelectedFiles);
@@ -983,6 +1112,9 @@
       loadQueueBtn.addEventListener('click', renderQueue);
       fillDemoBtn.addEventListener('click', fillDemo);
       queueList.addEventListener('click', handleQueueAction);
+      textArea.addEventListener('paste', (event) => {
+        void handlePaste(event);
+      });
 
       renderQueue();
     })();

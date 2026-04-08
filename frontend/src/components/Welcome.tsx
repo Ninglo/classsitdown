@@ -235,8 +235,8 @@ export default function Welcome({ teacherName, classes, onSelectClass, onLogout,
             <div className="batch-import-kicker">批量导入</div>
             <h2>导入多个班级座位表</h2>
             <p>
-              先把多个班级的座位表文件收进来，再把识别后的文字贴进去。
-              我会先帮你把班级号和名单提取出来，写进本机草稿，后面还能继续改。
+              现在可以直接上传图片、截图、拍照、PDF 和文本。
+              系统会先自动识别班级号和名单，写进本机草稿；识别不准时也能继续手动补。
             </p>
           </div>
           <div className="batch-import-actions">
