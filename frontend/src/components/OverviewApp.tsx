@@ -66,7 +66,7 @@ async function filesToMediaItems(files: File[]): Promise<MediaItem[]> {
       src,
       name: file.name,
       caption: '',
-      displayWidth: 100,
+      displayWidth: 140,
       annotations: [],
     });
   }
@@ -266,9 +266,9 @@ function MediaEditor({
               <span>图片宽度</span>
               <input
                 type="range"
-                min={40}
-                max={100}
-                value={item.displayWidth ?? 100}
+                min={80}
+                max={180}
+                value={item.displayWidth ?? 140}
                 onChange={(event) => updateItem(item.id, (current) => ({
                   ...current,
                   displayWidth: Number(event.target.value),
@@ -834,7 +834,7 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
                 <section key={row.id} className="ov-phase-editor-card">
                   <div className="ov-phase-editor-title">{row.label}</div>
                   <div className="ov-phase-editor-grid">
-                    <div className="ov-phase-cell">
+                    <div className="ov-phase-cell ov-phase-cell-names">
                       <div className="ov-phase-subtitle">学生名单</div>
                       <StudentPicker
                         studentNames={studentNames}
@@ -842,37 +842,39 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
                         onToggle={(name) => togglePhaseStudent(row.id, name)}
                       />
                     </div>
-                    <div className="ov-phase-cell">
-                      <div className="ov-phase-subtitle">具体挑战内容</div>
-                      <textarea
-                        rows={5}
-                        value={row.challengeContent}
-                        placeholder="比如：固定跟读、句型复述、单词滚动复盘"
-                        onChange={(event) =>
-                          updateContent((current) => ({
-                            ...current,
-                            phaseChallenges: current.phaseChallenges.map((phase) =>
-                              phase.id === row.id ? { ...phase, challengeContent: event.target.value } : phase,
-                            ),
-                          }))
-                        }
-                      />
-                    </div>
-                    <div className="ov-phase-cell">
-                      <div className="ov-phase-subtitle">达成途径</div>
-                      <textarea
-                        rows={5}
-                        value={row.method}
-                        placeholder="比如：每天 10 分钟 + 课堂抽查"
-                        onChange={(event) =>
-                          updateContent((current) => ({
-                            ...current,
-                            phaseChallenges: current.phaseChallenges.map((phase) =>
-                              phase.id === row.id ? { ...phase, method: event.target.value } : phase,
-                            ),
-                          }))
-                        }
-                      />
+                    <div className="ov-phase-editor-detail-grid">
+                      <div className="ov-phase-cell">
+                        <div className="ov-phase-subtitle">具体挑战内容</div>
+                        <textarea
+                          rows={5}
+                          value={row.challengeContent}
+                          placeholder="比如：固定跟读、句型复述、单词滚动复盘"
+                          onChange={(event) =>
+                            updateContent((current) => ({
+                              ...current,
+                              phaseChallenges: current.phaseChallenges.map((phase) =>
+                                phase.id === row.id ? { ...phase, challengeContent: event.target.value } : phase,
+                              ),
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="ov-phase-cell">
+                        <div className="ov-phase-subtitle">达成途径</div>
+                        <textarea
+                          rows={5}
+                          value={row.method}
+                          placeholder="比如：每天 10 分钟 + 课堂抽查"
+                          onChange={(event) =>
+                            updateContent((current) => ({
+                              ...current,
+                              phaseChallenges: current.phaseChallenges.map((phase) =>
+                                phase.id === row.id ? { ...phase, method: event.target.value } : phase,
+                              ),
+                            }))
+                          }
+                        />
+                      </div>
                     </div>
                   </div>
                 </section>
