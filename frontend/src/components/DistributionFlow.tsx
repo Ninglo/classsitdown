@@ -461,7 +461,7 @@ function StepPreview({
     const builtin = SCHEMES.find((s) => s.id === scheme);
     if (builtin) {
       if (builtin.id === 'scheme2') {
-        return `全勤奖励：所有任务全部完成才拿 ${schemeSettings.scheme2AllDoneAmount} MP 基础分；词王、准确率奖励照样叠加在基础分上`;
+        return `固定全勤奖励：只有所有任务全部完成时，基础落实才发放 ${schemeSettings.scheme2AllDoneAmount} MP；不再叠加词王、准确率、AI语音、测试这些条件奖励`;
       }
       return builtin.description;
     }

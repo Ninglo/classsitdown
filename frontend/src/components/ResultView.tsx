@@ -70,7 +70,7 @@ export default function ResultView({
   const [submitMessage, setSubmitMessage] = useState('');
 
   const rulesText = useMemo(() => {
-    const scheme2Text = `· 方案二（全勤奖励）：所有任务全部完成方可获得 ${schemeSettings.scheme2AllDoneAmount} MP 基础分，词王 / AI语音 / 测试得分率奖励在基础分之上叠加`;
+    const scheme2Text = `· 方案二（固定全勤奖励）：所有任务全部完成方可获得 ${schemeSettings.scheme2AllDoneAmount} MP 基础分；不再叠加词王 / AI语音 / 测试得分率等额外基础落实奖励`;
     return `MP 发放原则
 
 本次 MP 由以下几个部分构成：

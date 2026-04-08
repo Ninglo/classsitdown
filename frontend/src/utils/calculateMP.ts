@@ -48,26 +48,9 @@ function calcScheme1(student: StudentData): number {
 }
 
 function calcScheme2(student: StudentData, allDoneAmount: number): number {
-  const allDone = student.resources.every((res) => isCompleted(res.columns['是否完成']));
-  let mp = allDone ? allDoneAmount : 0;
-  for (const res of student.resources) {
-    const c = res.columns;
-    const type = res.resourceType;
-    if (type === '主题表达积累') {
-      if (isWordKing(c['是否达到词王'])) {
-        mp += 0.2;
-        const acc = parsePercent(c['词王平均正确率']);
-        if (acc !== null && acc >= 0.75) mp += 0.2;
-      }
-    } else if (type === 'AI语音') {
-      const avg = parsePercent(c['平均分']);
-      if (avg !== null && avg >= 0.75) mp += 0.2;
-    } else if (type === '测试') {
-      const score = c['分数(15)'];
-      if (score !== null && Number(score) / 15 >= 0.75) mp += 0.2;
-    }
-  }
-  return round2(mp);
+  const allDone = student.resources.length > 0
+    && student.resources.every((res) => isCompleted(res.columns['是否完成']));
+  return round2(allDone ? allDoneAmount : 0);
 }
 
 function round2(n: number): number {
@@ -122,6 +105,6 @@ export const SCHEMES = [
   {
     id: 'scheme2' as SchemeId,
     name: '方案二',
-    description: '全勤奖励：所有任务全部完成才拿基础分；词王、准确率奖励照样叠加在基础分上',
+    description: '固定全勤奖励：只有所有任务全部完成时，基础落实才发放你设置的固定 MP 值，不再叠加其他条件奖励',
   },
 ];
