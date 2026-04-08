@@ -35,8 +35,15 @@ async function translateViaMyMemory(word: string): Promise<string> {
   return payload.responseData?.translatedText?.trim() ?? '';
 }
 
+async function translateViaBackend(word: string): Promise<string> {
+  const response = await fetch(`/api/translate/en-zh?text=${encodeURIComponent(word)}`);
+  if (!response.ok) throw new Error('backend translate failed');
+  const payload = (await response.json()) as { translated?: string };
+  return payload.translated?.trim() ?? '';
+}
+
 async function translateWord(word: string): Promise<string> {
-  for (const translator of [translateViaGoogle, translateViaMyMemory]) {
+  for (const translator of [translateViaBackend, translateViaGoogle, translateViaMyMemory]) {
     try {
       const translated = await translator(word);
       if (translated) return translated;

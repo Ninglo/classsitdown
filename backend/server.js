@@ -228,6 +228,67 @@ function callAnthropicAPI(messages, systemPrompt) {
   });
 }
 
+function requestJson(url) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(
+      url,
+      {
+        headers: {
+          'User-Agent': 'AmberClass/1.0',
+          Accept: 'application/json, text/plain, */*',
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new Error(`HTTP ${res.statusCode}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(data));
+          } catch {
+            reject(new Error(`JSON 解析失败: ${data.slice(0, 120)}`));
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+  });
+}
+
+async function translateWordToChinese(text) {
+  const safeText = String(text || '').trim();
+  if (!safeText) return '';
+
+  try {
+    const googlePayload = await requestJson(
+      `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-CN&dt=t&q=${encodeURIComponent(safeText)}`
+    );
+    const rows = Array.isArray(googlePayload?.[0]) ? googlePayload[0] : [];
+    const translated = rows
+      .map((row) => (Array.isArray(row) ? String(row[0] || '') : ''))
+      .join('')
+      .trim();
+    if (translated) return translated;
+  } catch (error) {
+    console.warn('translate google failed:', error.message);
+  }
+
+  try {
+    const memoryPayload = await requestJson(
+      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(safeText)}&langpair=en|zh-CN`
+    );
+    const translated = String(memoryPayload?.responseData?.translatedText || '').trim();
+    if (translated) return translated;
+  } catch (error) {
+    console.warn('translate mymemory failed:', error.message);
+  }
+
+  return '';
+}
+
 app.post('/api/ai/daily-report', async (req, res) => {
   try {
     const { classCode, tables, note } = req.body || {};
@@ -261,6 +322,18 @@ app.post('/api/ai/daily-report', async (req, res) => {
   } catch (error) {
     console.error('❌ 日报生成失败:', error.message);
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/translate/en-zh', async (req, res) => {
+  try {
+    const text = String(req.query.text || '').trim();
+    if (!text) return res.status(400).json({ error: '缺少 text' });
+    const translated = await translateWordToChinese(text);
+    res.json({ status: 'success', translated });
+  } catch (error) {
+    console.error('❌ 翻译失败:', error.message);
+    res.status(500).json({ error: error.message || '翻译失败' });
   }
 });
 

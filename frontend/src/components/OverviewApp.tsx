@@ -8,6 +8,7 @@ import type {
   MediaAnnotation,
   MediaItem,
   OverviewContent,
+  OverviewThemeOption,
   PhaseChallengeRow,
 } from '../types/overview';
 import { getResolvedStudents, importStudentNames } from '../utils/classProfiles';
@@ -111,6 +112,12 @@ function parseStudentNames(raw: string): string[] {
 function sortStudentNames(names: string[]): string[] {
   return [...names].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
 }
+
+const OVERVIEW_THEME_OPTIONS: Array<{ value: OverviewThemeOption; label: string }> = [
+  { value: 'green', label: '森林绿' },
+  { value: 'amber', label: '琥珀金' },
+  { value: 'blue', label: '海盐蓝' },
+];
 
 function StudentPicker({
   studentNames,
@@ -460,11 +467,17 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
     setTranslating(true);
     try {
       const materials = await buildListeningMaterials(listeningBatchInput);
+      if (materials.length === 0) {
+        setNotice('没有识别到可用单词。');
+        return;
+      }
       updateContent((current) => ({
         ...current,
         listeningMaterials: materials,
       }));
       setNotice(`已识别 ${materials.length} 个单词，中文可以继续手动改。`);
+    } catch {
+      setNotice('英文识别到了，但自动补中文失败了。我已经改成后端翻译链路，刷新后再试一次。');
     } finally {
       setTranslating(false);
     }
@@ -588,11 +601,18 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
     [content.weeklyChallenges, orderedChallengeDays],
   );
   const showWeeklyChallenges = hasWeeklyChallenges(content);
-  const showPhaseChallenges = hasPhaseChallenges(content);
-  const showChallengeItems = hasChallengeItems(content);
-  const showListeningMaterials = hasListeningMaterials(content);
   const showCommunicationSection = hasCommunicationPlan(content);
   const visibleCustomBlocks = content.customBlocks.filter(hasCustomBlockContent);
+  const previewTheme = content.theme || 'green';
+  const phasePreviewRows = content.phaseChallenges.filter((row) =>
+    row.selectedStudents.length > 0 || row.challengeContent.trim() || row.method.trim(),
+  );
+  const challengePreviewItems = content.challengeItems.filter(
+    (item) => item.title.trim() || item.detail.trim() || item.media.length > 0,
+  );
+  const listeningPreviewItems = content.listeningMaterials.filter(
+    (item) => item.english.trim() || item.chinese.trim(),
+  );
 
   return (
     <div className="ov-shell fade-in">
@@ -603,6 +623,16 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
           <span>{formatDateShort(weekRange.start)} - {formatDateShort(weekRange.end)}</span>
         </div>
         <div className="ov-toolbar-actions">
+          <select
+            value={previewTheme}
+            onChange={(event) =>
+              updateContent((current) => ({ ...current, theme: event.target.value as OverviewThemeOption }))
+            }
+          >
+            {OVERVIEW_THEME_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
           <select value={week} onChange={(event) => handleWeekChange(Number(event.target.value))}>
             {Array.from({ length: 52 }, (_, index) => index + 1).map((item) => (
               <option key={item} value={item}>W{item}</option>
@@ -662,7 +692,7 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
           <section className="ov-editor-section">
             <div className="ov-section-head">
               <h3>① 本周挑战</h3>
-              <p>横排表格展示，第一天也可以手动切换。</p>
+              <p>横排填写，预览里只保留干净的表格。</p>
             </div>
             <div className="ov-inline-actions ov-inline-actions-start">
               <span className="ov-field-caption">第一天</span>
@@ -681,7 +711,7 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
               </select>
             </div>
             <div className="ov-week-table-wrap">
-              <div className="ov-week-table" style={{ gridTemplateColumns: `repeat(${weeklyChallengeRows.length}, minmax(180px, 1fr))` }}>
+              <div className="ov-week-table" style={{ gridTemplateColumns: `repeat(${weeklyChallengeRows.length}, minmax(220px, 1fr))` }}>
                 {weeklyChallengeRows.map((item) => (
                   <div key={`${item.day}_head`} className="ov-week-head">{item.day}</div>
                 ))}
@@ -1075,34 +1105,35 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
         </div>
 
         <div className="ov-preview">
-          <div className="ov-preview-paper" ref={cardRef}>
+          <div className={`ov-preview-paper ov-theme-${previewTheme}`} ref={cardRef}>
             <header className="ov-paper-header">
-              <div className="ov-paper-title-box">
-                <p className="ov-paper-eyebrow">课程概览</p>
-                <h2>{classCode}</h2>
-                <p className="ov-paper-date-range">{formatDateShort(weekRange.start)} - {formatDateShort(weekRange.end)}</p>
+              <div className="ov-paper-header-grid">
+                <div className="ov-paper-class-code">{classCode}</div>
+                <div className="ov-paper-meta">
+                  <span>课程概览</span>
+                  <strong>Week {week}</strong>
+                </div>
               </div>
-              <div className="ov-paper-week">
-                <strong>Week {week}</strong>
-                <span>{weekRange.start.getMonth() + 1}/{weekRange.start.getDate()} - {weekRange.end.getMonth() + 1}/{weekRange.end.getDate()}</span>
+              <div className="ov-paper-date-block">
+                <span>{formatDateShort(weekRange.start)} - {formatDateShort(weekRange.end)}</span>
               </div>
             </header>
 
             {showWeeklyChallenges && (
               <section className="ov-paper-section">
                 <div className="ov-paper-title">① 本周挑战</div>
-                <div className="ov-paper-week-table" style={{ gridTemplateColumns: `repeat(${weeklyChallengeRows.length}, minmax(180px, 1fr))` }}>
+                <div className="ov-paper-week-table" style={{ gridTemplateColumns: `repeat(${weeklyChallengeRows.length}, minmax(0, 1fr))` }}>
                   {weeklyChallengeRows.map((item) => (
                     <div key={`${item.day}_preview_head`} className="ov-paper-week-head">{item.day}</div>
                   ))}
                   {weeklyChallengeRows.map((item) => (
-                    <div key={`${item.day}_preview_body`} className="ov-paper-week-cell">{item.task}</div>
+                    <div key={`${item.day}_preview_body`} className="ov-paper-week-cell">{item.task.trim()}</div>
                   ))}
                 </div>
               </section>
             )}
 
-            {showPhaseChallenges && (
+            {phasePreviewRows.length > 0 && (
               <section className="ov-paper-section">
                 <div className="ov-paper-title">② 分阶段挑战</div>
                 <div className="ov-paper-phase-table">
@@ -1110,31 +1141,27 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
                   <div className="ov-paper-phase-head">学生名单</div>
                   <div className="ov-paper-phase-head">具体挑战内容</div>
                   <div className="ov-paper-phase-head">达成途径</div>
-                  {content.phaseChallenges
-                    .filter((row) => row.selectedStudents.length > 0 || row.challengeContent.trim() || row.method.trim())
-                    .map((row: PhaseChallengeRow) => (
+                  {phasePreviewRows.map((row: PhaseChallengeRow) => (
                       <Fragment key={row.id}>
                         <div key={`${row.id}_stage`} className="ov-paper-phase-stage">{row.label}</div>
                         <div key={`${row.id}_students`} className="ov-paper-phase-cell">{row.selectedStudents.join('、')}</div>
-                        <div key={`${row.id}_content`} className="ov-paper-phase-cell">{row.challengeContent}</div>
-                        <div key={`${row.id}_method`} className="ov-paper-phase-cell">{row.method}</div>
+                        <div key={`${row.id}_content`} className="ov-paper-phase-cell">{row.challengeContent.trim()}</div>
+                        <div key={`${row.id}_method`} className="ov-paper-phase-cell">{row.method.trim()}</div>
                       </Fragment>
-                    ))}
+                  ))}
                 </div>
               </section>
             )}
 
-            {showChallengeItems && (
+            {challengePreviewItems.length > 0 && (
               <section className="ov-paper-section">
                 <div className="ov-paper-title">③ 本周挑战内容</div>
                 <div className="ov-paper-stack">
-                  {content.challengeItems
-                    .filter((item) => item.title.trim() || item.detail.trim() || item.media.length > 0)
-                    .map((item: ChallengeItem, index) => (
+                  {challengePreviewItems.map((item: ChallengeItem, index) => (
                       <article key={item.id} className="ov-paper-task">
                         {(item.title || item.detail) && <div className="ov-paper-task-index">挑战 {index + 1}</div>}
-                        {item.title && <h4>{item.title}</h4>}
-                        {item.detail && <p>{item.detail}</p>}
+                        {item.title.trim() && <h4>{item.title.trim()}</h4>}
+                        {item.detail.trim() && <p>{item.detail.trim()}</p>}
                         {item.media.length > 0 && (
                           <div className="ov-paper-media-grid">
                             {item.media.map((media) => (
@@ -1151,18 +1178,16 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
               </section>
             )}
 
-            {showListeningMaterials && (
+            {listeningPreviewItems.length > 0 && (
               <section className="ov-paper-section">
                 <div className="ov-paper-title">④ 下周听读语料</div>
                 <div className={`ov-paper-listening ov-paper-listening-${content.listeningFont}`}>
-                  {content.listeningMaterials
-                    .filter((item: ListeningMaterialItem) => item.english.trim() || item.chinese.trim())
-                    .map((item: ListeningMaterialItem) => (
+                  {listeningPreviewItems.map((item: ListeningMaterialItem) => (
                       <div key={item.id} className="ov-paper-listening-row">
-                        <span className="ov-paper-word">{item.english}</span>
-                        <span className="ov-paper-meaning">{item.chinese}</span>
+                        <span className="ov-paper-word">{item.english.trim()}</span>
+                        <span className="ov-paper-meaning">{item.chinese.trim()}</span>
                       </div>
-                    ))}
+                  ))}
                 </div>
               </section>
             )}
@@ -1183,7 +1208,7 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
 
             {visibleCustomBlocks.map((block) => (
               <section key={block.id} className="ov-paper-section">
-                <div className="ov-paper-title">⑥ {block.title}</div>
+                <div className="ov-paper-title">⑥ {block.title.trim() || '补充内容'}</div>
                 {block.mode === 'text' && <p className="ov-paper-paragraph">{block.text}</p>}
                 {block.mode === 'table' && (
                   <div className="ov-paper-custom-table" style={{ gridTemplateColumns: `repeat(${block.table.columns.length}, minmax(0, 1fr))` }}>
