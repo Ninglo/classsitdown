@@ -4,7 +4,7 @@ export type PhaseChallengeKey = '夯实基础' | '维稳达标' | '突破拔高'
 export type ListeningFontOption = 'print' | 'guide' | 'rounded';
 export type CustomBlockMode = 'text' | 'table' | 'image';
 export type MediaAnnotationType = 'box' | 'text';
-export type OverviewThemeOption = 'green' | 'amber' | 'blue';
+export type OverviewThemeOption = 'green' | 'amber' | 'blue' | 'rose' | 'graphite';
 
 export interface WeeklyChallengeDay {
   day: DayOfWeek;

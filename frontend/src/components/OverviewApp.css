@@ -107,6 +107,13 @@
   margin-bottom: 14px;
 }
 
+.ov-section-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
 .ov-section-head h3 {
   font-size: 18px;
   color: #37495d;
@@ -165,6 +172,24 @@
   color: var(--green-dark);
 }
 
+.ov-student-chip-tone-foundation.active {
+  border-color: rgba(99, 165, 122, 0.72);
+  background: linear-gradient(180deg, rgba(233, 247, 238, 0.98), rgba(217, 240, 225, 0.98));
+  color: #214933;
+}
+
+.ov-student-chip-tone-steady.active {
+  border-color: rgba(87, 136, 198, 0.72);
+  background: linear-gradient(180deg, rgba(234, 242, 252, 0.98), rgba(219, 232, 250, 0.98));
+  color: #214563;
+}
+
+.ov-student-chip-tone-boost.active {
+  border-color: rgba(194, 134, 76, 0.72);
+  background: linear-gradient(180deg, rgba(252, 243, 232, 0.98), rgba(248, 232, 210, 0.98));
+  color: #6f4319;
+}
+
 .ov-student-chip-static {
   background: rgba(246, 249, 252, 0.96);
 }
@@ -174,6 +199,18 @@
   width: 16px;
   height: 16px;
   accent-color: var(--green-dark);
+}
+
+.ov-student-chip-tone-foundation input {
+  accent-color: #4c9f68;
+}
+
+.ov-student-chip-tone-steady input {
+  accent-color: #477cc0;
+}
+
+.ov-student-chip-tone-boost input {
+  accent-color: #cb7a2b;
 }
 
 .ov-student-import {
@@ -427,6 +464,10 @@
 .ov-preview {
   position: sticky;
   top: 16px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
 }
 
 .ov-preview-paper {
@@ -464,6 +505,22 @@
   --ov-theme-line: rgba(102, 158, 184, 0.22);
   --ov-theme-border: rgba(102, 158, 184, 0.48);
   --ov-theme-text: #2f596b;
+}
+
+.ov-preview-paper.ov-theme-rose {
+  --ov-theme-strong: #b05c7b;
+  --ov-theme-soft: rgba(250, 237, 242, 0.96);
+  --ov-theme-line: rgba(199, 119, 154, 0.22);
+  --ov-theme-border: rgba(199, 119, 154, 0.48);
+  --ov-theme-text: #6e3049;
+}
+
+.ov-preview-paper.ov-theme-graphite {
+  --ov-theme-strong: #4d5560;
+  --ov-theme-soft: rgba(239, 242, 245, 0.96);
+  --ov-theme-line: rgba(123, 132, 144, 0.24);
+  --ov-theme-border: rgba(104, 114, 128, 0.48);
+  --ov-theme-text: #2f3640;
 }
 
 .ov-paper-header {
@@ -739,10 +796,19 @@
 
   .ov-preview {
     position: static;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 }
 
 @media (max-width: 960px) {
+  .ov-section-head,
+  .ov-section-head-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .ov-toolbar {
     flex-direction: column;
     align-items: stretch;

@@ -126,16 +126,28 @@ const OVERVIEW_THEME_OPTIONS: Array<{ value: OverviewThemeOption; label: string 
   { value: 'green', label: '森林绿' },
   { value: 'amber', label: '琥珀金' },
   { value: 'blue', label: '海盐蓝' },
+  { value: 'rose', label: '玫瑰粉' },
+  { value: 'graphite', label: '石墨灰' },
 ];
+
+type StudentPickerTone = 'neutral' | 'foundation' | 'steady' | 'boost';
+
+function getPhaseTone(key: PhaseChallengeRow['key']): StudentPickerTone {
+  if (key === '夯实基础') return 'foundation';
+  if (key === '维稳达标') return 'steady';
+  return 'boost';
+}
 
 function StudentPicker({
   studentNames,
   selected,
   onToggle,
+  tone = 'neutral',
 }: {
   studentNames: string[];
   selected: string[];
   onToggle: (name: string) => void;
+  tone?: StudentPickerTone;
 }) {
   if (studentNames.length === 0) {
     return <p className="ov-empty-hint">当前班级还没有导入学生名单。</p>;
@@ -144,7 +156,10 @@ function StudentPicker({
   return (
     <div className="ov-student-grid">
       {sortStudentNames(studentNames).map((name) => (
-        <label key={name} className={`ov-student-chip${selected.includes(name) ? ' active' : ''}`}>
+        <label
+          key={name}
+          className={`ov-student-chip ov-student-chip-tone-${tone}${selected.includes(name) ? ' active' : ''}`}
+        >
           <input
             type="checkbox"
             checked={selected.includes(name)}
@@ -476,11 +491,13 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
   const [listeningBatchInput, setListeningBatchInput] = useState('');
   const [translating, setTranslating] = useState(false);
   const [studentImportInput, setStudentImportInput] = useState('');
+  const [studentListCollapsed, setStudentListCollapsed] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const nextNames = sortStudentNames(getResolvedStudents(classCode).map((student) => student.chineseName));
     setStudentNames(nextNames);
+    setStudentListCollapsed(nextNames.length > 12);
     const draft = loadDraft(classCode, week);
     setContent(draft ?? createEmptyContent(classCode, week, { orderedDays, studentNames: nextNames }));
   }, [classCode, orderedDays, week]);
@@ -750,13 +767,27 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
           <section className="ov-editor-section ov-editor-section-compact">
             <div className="ov-section-head">
               <h3>学生名单</h3>
-              <p>{studentNames.length > 0 ? `已读取 ${studentNames.length} 人` : '当前还没有可用名单'}</p>
+              <div className="ov-section-head-actions">
+                <p>{studentNames.length > 0 ? `已读取 ${studentNames.length} 人` : '当前还没有可用名单'}</p>
+                {studentNames.length > 0 && (
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setStudentListCollapsed((collapsed) => !collapsed)}
+                  >
+                    {studentListCollapsed ? '展开名单' : '收起名单'}
+                  </button>
+                )}
+              </div>
             </div>
-            {studentNames.length > 0 ? (
+            {studentNames.length > 0 && !studentListCollapsed ? (
               <div className="ov-student-grid">
                 {studentNames.map((name) => (
                   <span key={name} className="ov-student-chip ov-student-chip-static">{name}</span>
                 ))}
+              </div>
+            ) : studentNames.length > 0 ? (
+              <div className="ov-empty-state-inline">
+                <p>名单已收起，下面导入区和各层级勾选仍然可用。</p>
               </div>
             ) : (
               <div className="ov-empty-state-inline">
@@ -850,6 +881,7 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
                         studentNames={studentNames}
                         selected={row.selectedStudents}
                         onToggle={(name) => togglePhaseStudent(row.id, name)}
+                        tone={getPhaseTone(row.key)}
                       />
                     </div>
                     <div className="ov-phase-editor-detail-grid">
