@@ -15,6 +15,15 @@ const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const CNF_BASE_URL = process.env.CNFADMIN_BASE_URL || 'https://cnfadmin.cnfschool.net';
 const sessions = new Map();
 
+function getTraceId(req) {
+  const raw = String(req.headers['x-login-trace-id'] || '').trim();
+  return raw || crypto.randomUUID();
+}
+
+function logTrace(traceId, stage, payload = {}) {
+  console.log('[login-trace]', JSON.stringify({ traceId, stage, ...payload }));
+}
+
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '20mb' }));
 
@@ -76,9 +85,11 @@ function requireLoggedInSession(req, res) {
 
 app.post('/api/scraper/login', async (req, res) => {
   const { session } = ensureSession(req, res);
+  const traceId = getTraceId(req);
+  res.setHeader('X-Login-Trace-Id', traceId);
 
   if (session.loginInProgress) {
-    return res.status(429).json({ error: '正在登录中，请稍等...' });
+    return res.status(429).json({ error: '正在登录中，请稍等...', traceId });
   }
 
   try {
@@ -89,6 +100,10 @@ app.post('/api/scraper/login', async (req, res) => {
     }
 
     session.loginInProgress = true;
+    logTrace(traceId, 'login_request_started', {
+      username,
+      hadExistingSession: Boolean(session.scraper),
+    });
 
     if (session.scraper) {
       try { await session.scraper.close(); } catch {}
@@ -103,6 +118,9 @@ app.post('/api/scraper/login', async (req, res) => {
 
     await scraper.login();
     const loginFinishedAt = performance.now();
+    logTrace(traceId, 'scraper_login_completed', {
+      timings: scraper.lastLoginTiming,
+    });
     console.log(`✅ 登录成功: ${username}`);
 
     const classMap = await scraper.getClassMap();
@@ -118,27 +136,52 @@ app.post('/api/scraper/login', async (req, res) => {
     session.username = username;
     session.lastSeenAt = Date.now();
 
+    const responseTimings = {
+      routeMs: Number((classesFinishedAt - startedAt).toFixed(1)),
+      scraperLogin: scraper.lastLoginTiming,
+      classMap: scraper.lastClassMapTiming,
+      routePhases: {
+        loginMs: Number((loginFinishedAt - startedAt).toFixed(1)),
+        classMapMs: Number((classesFinishedAt - loginFinishedAt).toFixed(1)),
+      },
+    };
+    logTrace(traceId, 'login_request_completed', {
+      classCount: classes.length,
+      timings: responseTimings,
+    });
+
     res.json({
       status: 'success',
       message: '登录成功',
+      traceId,
       classes,
       classCount: classes.length,
-      timings: {
-        routeMs: Number((classesFinishedAt - startedAt).toFixed(1)),
-        scraperLogin: scraper.lastLoginTiming,
-        classMap: scraper.lastClassMapTiming,
-        routePhases: {
-          loginMs: Number((loginFinishedAt - startedAt).toFixed(1)),
-          classMapMs: Number((classesFinishedAt - loginFinishedAt).toFixed(1)),
-        },
-      },
+      timings: responseTimings,
     });
   } catch (error) {
+    logTrace(traceId, 'login_request_failed', {
+      error: error.message,
+    });
     console.error('❌ 登录失败:', error.message);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: error.message, traceId });
   } finally {
     session.loginInProgress = false;
   }
+});
+
+app.post('/api/traces/login-client', (req, res) => {
+  const traceId = String(req.body?.traceId || '').trim() || crypto.randomUUID();
+  console.log('[login-client-trace]', JSON.stringify({
+    traceId,
+    totalMs: req.body?.totalMs,
+    requestMs: req.body?.requestMs,
+    responseParseMs: req.body?.responseParseMs,
+    handoffMs: req.body?.handoffMs,
+    renderMs: req.body?.renderMs,
+    location: req.body?.location,
+    userAgent: req.body?.userAgent,
+  }));
+  res.json({ status: 'ok', traceId });
 });
 
 app.post('/api/scraper/get-classes', async (req, res) => {

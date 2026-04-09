@@ -27,7 +27,7 @@ export default function Login({ onLogin }: Props) {
       return;
     }
     setError('');
-    beginLoginPerf({ username: username.trim() });
+    const traceId = beginLoginPerf({ username: username.trim() });
     setLoading(true);
     setLoadingMsg('正在连接教务系统...');
 
@@ -38,7 +38,10 @@ export default function Login({ onLogin }: Props) {
       markLoginPerf('request_started');
       const loginRes = await fetch('/api/scraper/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(traceId ? { 'x-login-trace-id': traceId } : {}),
+        },
         credentials: 'include',
         body: JSON.stringify({ username: username.trim(), password: password.trim() }),
         signal: ctrl.signal,
@@ -54,6 +57,7 @@ export default function Login({ onLogin }: Props) {
       }
       markLoginPerf('response_parsed', {
         status: loginRes.status,
+        traceId,
         timings: loginData.timings,
       });
 

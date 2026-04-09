@@ -23,7 +23,7 @@ function getState() {
 }
 
 export function beginLoginPerf(data?: unknown) {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined') return undefined;
   const state: LoginPerfState = {
     runId: `login-${Date.now()}`,
     baseAt: performance.now(),
@@ -31,6 +31,7 @@ export function beginLoginPerf(data?: unknown) {
   };
   window.__amberLoginPerf = state;
   markLoginPerf('submit_clicked', data);
+  return state.runId;
 }
 
 export function markLoginPerf(name: string, data?: unknown) {
@@ -59,7 +60,7 @@ export function flushLoginPerf(finalStage: string, data?: unknown) {
     return Number((byName[end] - byName[start]).toFixed(1));
   };
 
-  console.log('[login-perf-summary]', JSON.stringify({
+  const summary = {
     runId: state.runId,
     totalMs: byName[finalStage] ?? null,
     requestMs: between('request_started', 'response_received'),
@@ -67,7 +68,22 @@ export function flushLoginPerf(finalStage: string, data?: unknown) {
     handoffMs: between('handoff_to_app', 'app_handle_login'),
     renderMs: between('app_handle_login', 'welcome_interactive'),
     marks,
-  }));
+  };
+
+  console.log('[login-perf-summary]', JSON.stringify(summary));
+
+  const payload = JSON.stringify({
+    traceId: state.runId,
+    location: window.location.href,
+    userAgent: navigator.userAgent,
+    ...summary,
+  });
+  void fetch('/api/traces/login-client', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload,
+    keepalive: true,
+  }).catch(() => {});
 }
 
 export {};
