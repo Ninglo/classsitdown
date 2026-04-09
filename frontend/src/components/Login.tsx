@@ -27,7 +27,7 @@ export default function Login({ onLogin }: Props) {
     }
     setError('');
     setLoading(true);
-    setLoadingMsg('正在启动浏览器，连接教务系统（约15秒）...');
+    setLoadingMsg('正在连接教务系统...');
 
     try {
       const ctrl = new AbortController();
@@ -62,7 +62,7 @@ export default function Login({ onLogin }: Props) {
 
       setLoadingMsg(`登录成功，已获取 ${classes.length} 个班级`);
       localStorage.setItem('amber_username', username.trim());
-      setTimeout(() => onLogin(username.trim(), classes), 600);
+      onLogin(username.trim(), classes);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '连接失败';
       if (msg.includes('abort')) {
