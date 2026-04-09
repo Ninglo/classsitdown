@@ -4,6 +4,7 @@ import Welcome from './components/Welcome';
 import ClassHub from './components/ClassHub';
 import NewestSeatingFrame from './components/NewestSeatingFrame';
 import ReLoginModal from './components/ReLoginModal';
+import { flushLoginPerf, markLoginPerf } from './utils/loginPerf';
 
 const OverviewApp = lazy(() => import('./components/OverviewApp'));
 const ClassRosterApp = lazy(() => import('./components/ClassRosterApp'));
@@ -88,12 +89,32 @@ export default function App() {
   }, [classes.length]);
 
   function handleLogin(name: string, classList: ClassInfo[]) {
+    markLoginPerf('app_handle_login', { classCount: classList.length });
     setTeacherName(name);
     setClasses(classList);
     startTransition(() => {
       setScreen('welcome');
     });
   }
+
+  useEffect(() => {
+    if (screen !== 'welcome') return;
+
+    markLoginPerf('welcome_state_committed', { classCount: classes.length });
+    let raf1 = 0;
+    let raf2 = 0;
+    raf1 = window.requestAnimationFrame(() => {
+      markLoginPerf('welcome_first_frame', { classCount: classes.length });
+      raf2 = window.requestAnimationFrame(() => {
+        flushLoginPerf('welcome_interactive', { classCount: classes.length });
+      });
+    });
+
+    return () => {
+      if (raf1) window.cancelAnimationFrame(raf1);
+      if (raf2) window.cancelAnimationFrame(raf2);
+    };
+  }, [screen, classes.length]);
 
   function handleSelectClass(cls: ClassInfo) {
     startTransition(() => {

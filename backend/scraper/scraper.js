@@ -6,6 +6,7 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
 const cheerio = require('cheerio');
+const { performance } = require('node:perf_hooks');
 
 class EducationSystemScraper {
   constructor(options = {}) {
@@ -17,6 +18,8 @@ class EducationSystemScraper {
     this.cookies = [];
     this.cookieJar = new Map();
     this.browserSessionReady = false;
+    this.lastLoginTiming = null;
+    this.lastClassMapTiming = null;
     this.classMapCache = [];
     this.classMapCacheAt = 0;
   }
@@ -320,14 +323,22 @@ class EducationSystemScraper {
   async getClassMap(forceRefresh = false) {
     const now = Date.now();
     if (!forceRefresh && this.classMapCache.length > 0 && now - this.classMapCacheAt < 2 * 60 * 1000) {
+      this.lastClassMapTiming = {
+        cacheHit: true,
+        fetchMs: 0,
+        parseMs: 0,
+        totalMs: 0,
+      };
       return this.classMapCache;
     }
 
+    const startedAt = performance.now();
     const { response, text } = await this.requestText('/admin', {
       headers: {
         accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       },
     });
+    const fetchedAt = performance.now();
 
     if (!response.ok) {
       throw new Error(`获取班级页失败 (HTTP ${response.status})`);
@@ -338,9 +349,17 @@ class EducationSystemScraper {
     }
 
     const map = this.extractClassMapFromHtml(text);
+    const parsedAt = performance.now();
 
     this.classMapCache = map;
     this.classMapCacheAt = Date.now();
+    this.lastClassMapTiming = {
+      cacheHit: false,
+      fetchMs: Number((fetchedAt - startedAt).toFixed(1)),
+      parseMs: Number((parsedAt - fetchedAt).toFixed(1)),
+      totalMs: Number((parsedAt - startedAt).toFixed(1)),
+      classCount: map.length,
+    };
     return map;
   }
 
@@ -695,12 +714,14 @@ class EducationSystemScraper {
       this.browserSessionReady = false;
 
       console.log('🔄 正在通过HTTP登录教务系统...');
+      const startedAt = performance.now();
 
       const { response: loginPageResponse, text: loginPageHtml } = await this.requestText('/admin/auth/login', {
         headers: {
           accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         },
       });
+      const loginPageAt = performance.now();
 
       if (!loginPageResponse.ok) {
         throw new Error(`加载登录页失败 (HTTP ${loginPageResponse.status})`);
@@ -731,6 +752,7 @@ class EducationSystemScraper {
       });
 
       const raw = await loginResponse.text();
+      const loginPostedAt = performance.now();
       let result;
       try {
         result = JSON.parse(raw);
@@ -746,6 +768,11 @@ class EducationSystemScraper {
         throw new Error(result.msg || '登录失败');
       }
 
+      this.lastLoginTiming = {
+        loginPageMs: Number((loginPageAt - startedAt).toFixed(1)),
+        postLoginMs: Number((loginPostedAt - loginPageAt).toFixed(1)),
+        totalMs: Number((loginPostedAt - startedAt).toFixed(1)),
+      };
       console.log('✅ HTTP登录成功，已保存会话cookies');
 
       return this.cookies;

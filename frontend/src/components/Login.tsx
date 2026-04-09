@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { ClassInfo } from '../types';
+import { beginLoginPerf, flushLoginPerf, markLoginPerf } from '../utils/loginPerf';
 import './Login.css';
 
 interface Props {
@@ -26,6 +27,7 @@ export default function Login({ onLogin }: Props) {
       return;
     }
     setError('');
+    beginLoginPerf({ username: username.trim() });
     setLoading(true);
     setLoadingMsg('正在连接教务系统...');
 
@@ -33,6 +35,7 @@ export default function Login({ onLogin }: Props) {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 40000);
 
+      markLoginPerf('request_started');
       const loginRes = await fetch('/api/scraper/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -41,6 +44,7 @@ export default function Login({ onLogin }: Props) {
         signal: ctrl.signal,
       });
       clearTimeout(timer);
+      markLoginPerf('response_received', { status: loginRes.status });
 
       let loginData: Record<string, unknown> = {};
       try {
@@ -48,6 +52,10 @@ export default function Login({ onLogin }: Props) {
       } catch {
         throw new Error('服务器响应异常，请确认后端正在运行（cd backend && node server.js）');
       }
+      markLoginPerf('response_parsed', {
+        status: loginRes.status,
+        timings: loginData.timings,
+      });
 
       if (!loginRes.ok) {
         if (loginRes.status === 429) throw new Error('正在登录中，请稍等再试');
@@ -62,9 +70,14 @@ export default function Login({ onLogin }: Props) {
 
       setLoadingMsg(`登录成功，已获取 ${classes.length} 个班级`);
       localStorage.setItem('amber_username', username.trim());
+      markLoginPerf('handoff_to_app', {
+        classCount: classes.length,
+      });
       onLogin(username.trim(), classes);
     } catch (err) {
       const msg = err instanceof Error ? err.message : '连接失败';
+      markLoginPerf('login_failed', { message: msg });
+      flushLoginPerf('failed');
       if (msg.includes('abort')) {
         setError('连接超时（>40秒），请确认后端服务已启动：cd backend && node server.js');
       } else {

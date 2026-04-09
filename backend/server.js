@@ -82,6 +82,7 @@ app.post('/api/scraper/login', async (req, res) => {
   }
 
   try {
+    const startedAt = performance.now();
     const { username, password } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: '缺少用户名或密码' });
@@ -101,9 +102,11 @@ app.post('/api/scraper/login', async (req, res) => {
     });
 
     await scraper.login();
+    const loginFinishedAt = performance.now();
     console.log(`✅ 登录成功: ${username}`);
 
     const classMap = await scraper.getClassMap();
+    const classesFinishedAt = performance.now();
     const classes = classMap.map((item) => ({
       id: item.classCode,
       name: item.classCode,
@@ -120,6 +123,15 @@ app.post('/api/scraper/login', async (req, res) => {
       message: '登录成功',
       classes,
       classCount: classes.length,
+      timings: {
+        routeMs: Number((classesFinishedAt - startedAt).toFixed(1)),
+        scraperLogin: scraper.lastLoginTiming,
+        classMap: scraper.lastClassMapTiming,
+        routePhases: {
+          loginMs: Number((loginFinishedAt - startedAt).toFixed(1)),
+          classMapMs: Number((classesFinishedAt - loginFinishedAt).toFixed(1)),
+        },
+      },
     });
   } catch (error) {
     console.error('❌ 登录失败:', error.message);
