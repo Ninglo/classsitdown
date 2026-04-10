@@ -13,6 +13,8 @@ const PORT = Number(process.env.PORT || 3001);
 const SESSION_COOKIE = 'amber_sid';
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const CNF_BASE_URL = process.env.CNFADMIN_BASE_URL || 'https://cnfadmin.cnfschool.net';
+const DEFAULT_REPORT_SCRIPT_DIR = path.resolve(os.homedir(), '.remotelab/instances/trial23/scripts');
+const REPORT_SCRIPT_DIR = process.env.CLASS_DAILY_REPORT_SCRIPT_DIR || DEFAULT_REPORT_SCRIPT_DIR;
 const sessions = new Map();
 
 function getTraceId(req) {
@@ -199,6 +201,40 @@ app.post('/api/scraper/get-classes', async (req, res) => {
     res.json({ status: 'success', data: classes, count: classes.length });
   } catch (error) {
     console.error('❌ 获取班级失败:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/scraper/get-student-list', async (req, res) => {
+  try {
+    const session = requireLoggedInSession(req, res);
+    if (!session) return;
+
+    const { classId } = req.body || {};
+    if (!classId) {
+      return res.status(400).json({ error: '缺少班级ID' });
+    }
+
+    const { squadId } = await session.scraper.resolveSquadId(classId);
+    const response = await session.scraper.request(
+      `/admin/squad/cop_mip/getStudentList?squad_id=${encodeURIComponent(squadId)}&squad_type=offline`,
+      { headers: { accept: 'application/json' } }
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!Array.isArray(data?.data)) {
+      throw new Error(String(data?.msg || `学生名单获取失败: ${response.status}`));
+    }
+
+    const students = data.data.map((item) => ({
+      no: String(item?.no || '').trim(),
+      chName: String(item?.ch_name || '').trim(),
+      enName: String(item?.en_name || '').trim(),
+    }));
+
+    console.log(`✅ 获取班级 ${classId} (squad=${squadId}) 学生名单: ${students.length} 人`);
+    res.json({ status: 'success', data: students, count: students.length, squadId });
+  } catch (error) {
+    console.error('❌ 获取学生名单失败:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -938,8 +974,8 @@ app.post('/api/reports/class-daily-report', async (req, res) => {
     }
 
     const scriptPath = normalizedMode === 'detail'
-      ? path.resolve(os.homedir(), '.remotelab/instances/trial23/scripts/class_daily_report_detail.py')
-      : path.resolve(os.homedir(), '.remotelab/instances/trial23/scripts/class_daily_report.py');
+      ? path.resolve(REPORT_SCRIPT_DIR, 'class_daily_report_detail.py')
+      : path.resolve(REPORT_SCRIPT_DIR, 'class_daily_report.py');
 
     const args = normalizedMode === 'detail'
       ? [checkinPath, studentPath]

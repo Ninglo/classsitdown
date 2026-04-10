@@ -170,6 +170,7 @@ export default function ClassRosterApp({ classInfo, knownClasses, onBack }: Prop
   const [editorRows, setEditorRows] = useState<EditableStudentRow[]>([]);
   const [quickPasteInput, setQuickPasteInput] = useState('');
   const [editorNotice, setEditorNotice] = useState('');
+  const [syncBusy, setSyncBusy] = useState(false);
 
   const classCodes = useMemo(
     () => listKnownClassCodes(knownClasses.map((item) => item.name)),
@@ -207,6 +208,46 @@ export default function ClassRosterApp({ classInfo, knownClasses, onBack }: Prop
   function applyBatchRows(rows: ParsedRosterRow[]) {
     setBatchRows(rows);
     setBatchNotice(rows.length ? `已识别 ${rows.length} 条学生信息。` : '没有识别到可用数据。');
+  }
+
+  async function handleSyncFromSystem() {
+    if (syncBusy) return;
+    const targetClass = activeClassCode || classInfo?.name;
+    if (!targetClass) {
+      setBatchNotice('请先选择一个班级。');
+      return;
+    }
+    setSyncBusy(true);
+    setBatchNotice(`正在从教务系统抓取 ${targetClass} 的学生名单...`);
+    try {
+      const resp = await fetch('/api/scraper/get-student-list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ classId: targetClass }),
+      });
+      const data = await resp.json().catch(() => ({} as Record<string, unknown>));
+      if (!resp.ok) {
+        throw new Error((data as { error?: string }).error || `请求失败 (${resp.status})`);
+      }
+      const students = ((data as { data?: { no: string; chName: string; enName: string }[] }).data || []);
+      if (students.length === 0) {
+        setBatchNotice(`${targetClass} 暂无学生数据。`);
+        return;
+      }
+      const rows: ParsedRosterRow[] = students.map((s) => ({
+        classCode: normalizeClassCode(targetClass),
+        studentId: s.no || '',
+        chineseName: s.chName || '',
+        englishName: s.enName || '',
+      }));
+      applyBatchRows(rows);
+      setBatchNotice(`已从教务系统获取 ${targetClass}，共 ${rows.length} 名学生。`);
+    } catch (err) {
+      setBatchNotice(err instanceof Error ? err.message : '抓取失败');
+    } finally {
+      setSyncBusy(false);
+    }
   }
 
   async function handleBatchFile(file: File | null) {
