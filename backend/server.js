@@ -933,7 +933,9 @@ app.post('/api/reports/class-daily-report', async (req, res) => {
       ? path.resolve(os.homedir(), '.remotelab/instances/trial23/scripts/class_daily_report_detail.py')
       : path.resolve(os.homedir(), '.remotelab/instances/trial23/scripts/class_daily_report.py');
 
-    const args = [checkinPath, studentPath];
+    const args = normalizedMode === 'detail'
+      ? [checkinPath, studentPath]
+      : (hasCheckinFile ? [studentPath, checkinPath] : [studentPath]);
     const trimmedClassName = String(className || '').trim();
     if (trimmedClassName) {
       args.push(trimmedClassName);
