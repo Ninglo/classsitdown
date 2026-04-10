@@ -66,7 +66,7 @@ function triggerDownload(blob: Blob, filename: string) {
 
 export default function DailyReportApp({ classInfo, onBack }: Props) {
   const [reportMode, setReportMode] = useState<ReportMode>('standard');
-  const [className, setClassName] = useState(classInfo.name || '');
+  const [className, setClassName] = useState('');
   const [studentFile, setStudentFile] = useState<UploadedFileState>({ file: null, name: '' });
   const [checkinFile, setCheckinFile] = useState<UploadedFileState>({ file: null, name: '' });
   const [loading, setLoading] = useState(false);
@@ -188,13 +188,13 @@ export default function DailyReportApp({ classInfo, onBack }: Props) {
         </div>
 
         <div className="dr-panel">
-          <label className="dr-field-label" htmlFor="daily-report-class-name">班名</label>
+          <label className="dr-field-label" htmlFor="daily-report-class-name">班名（可选）</label>
           <input
             id="daily-report-class-name"
             className="dr-input"
             value={className}
             onChange={(event) => setClassName(event.target.value)}
-            placeholder="默认使用当前班级名"
+            placeholder="留空则从学生个人数据文件名识别"
           />
         </div>
 

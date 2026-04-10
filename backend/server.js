@@ -766,6 +766,11 @@ function decodeBase64File(payload, label) {
   };
 }
 
+function inferClassNameFromFilename(filename) {
+  const match = String(filename || '').match(/([A-Za-z]\d{3,})/);
+  return match ? `${match[1].toUpperCase()}班` : '';
+}
+
 function createEmptyCheckinWorkbook(filePath) {
   return new Promise((resolve, reject) => {
     const script = `
@@ -799,7 +804,7 @@ wb.save(target)
   });
 }
 
-function stripCheckinColumns(workbookPath, reportMode) {
+function cleanupNoCheckinWorkbook(workbookPath, reportMode) {
   return new Promise((resolve, reject) => {
     const script = `
 import sys
@@ -813,9 +818,6 @@ if mode == "detail":
     ws = wb[wb.sheetnames[0]]
     ws.delete_cols(3, 1)
 else:
-    ws_public = wb["完成公示"]
-    ws_public.delete_cols(3, 1)
-
     ws_analysis = wb["质量分析"]
     header_row = 1
     target_col = None
@@ -826,6 +828,12 @@ else:
             break
     if target_col:
         ws_analysis.delete_cols(target_col, 1)
+
+for ws in wb.worksheets:
+    for row in ws.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, str) and "打卡" in cell.value:
+                cell.value = cell.value.replace("质量/打卡", "质量")
 
 wb.save(path)
 `;
@@ -840,7 +848,7 @@ wb.save(path)
     child.on('error', reject);
     child.on('close', (code) => {
       if (code !== 0) {
-        reject(new Error(stderr.trim() || '移除打卡列失败'));
+        reject(new Error(stderr.trim() || '清理打卡列失败'));
         return;
       }
       resolve();
@@ -936,14 +944,15 @@ app.post('/api/reports/class-daily-report', async (req, res) => {
     const args = normalizedMode === 'detail'
       ? [checkinPath, studentPath]
       : (hasCheckinFile ? [studentPath, checkinPath] : [studentPath]);
-    const trimmedClassName = String(className || '').trim();
+    const inferredClassName = inferClassNameFromFilename(student.name);
+    const trimmedClassName = inferredClassName || String(className || '').trim();
     if (trimmedClassName) {
       args.push(trimmedClassName);
     }
 
     const outputPath = await runPythonReport(scriptPath, args, tempDir);
     if (!hasCheckinFile) {
-      await stripCheckinColumns(outputPath, normalizedMode);
+      await cleanupNoCheckinWorkbook(outputPath, normalizedMode);
     }
     const fileBuffer = await fs.readFile(outputPath);
     const downloadName = path.basename(outputPath);
