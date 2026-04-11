@@ -45,7 +45,6 @@ const UsageInsightsApp = lazyWithReload(() => import('./components/UsageInsights
 import type { AppScreen, ClassInfo } from './types';
 import { saveAppState, loadAppState } from './utils/appPersistence';
 
-const CLASS_CONTEXT_SCREENS: AppScreen[] = ['flow', 'seating', 'overview', 'daily-report', 'roster'];
 
 function isUsageInsightsEnabled() {
   if (typeof window === 'undefined') return false;
@@ -352,11 +351,6 @@ export default function App() {
 
   if (!restored) return null;
 
-  const showClassContextBar =
-    Boolean(selectedClass)
-    && selectedClass?.id !== 'manual'
-    && CLASS_CONTEXT_SCREENS.includes(screen);
-
   return (
     <>
       {screen === 'login' && (
@@ -379,6 +373,7 @@ export default function App() {
             classInfo={selectedClass}
             knownClasses={classes}
             onBack={selectedClass ? handleBackToHub : handleBackToWelcome}
+            onBackToHome={handleBackToWelcome}
             onSessionExpired={handleSessionExpired}
           />
         </Suspense>
@@ -391,8 +386,10 @@ export default function App() {
       {screen === 'hub' && selectedClass && (
         <ClassHub
           classInfo={selectedClass}
+          classes={classes}
           onNavigate={handleNavigate}
           onBack={handleBackToWelcome}
+          onSwitchClass={handleSwitchClass}
         />
       )}
       {screen === 'flow' && selectedClass && (
@@ -400,7 +397,10 @@ export default function App() {
           <DistributionFlow
             key={`flow:${selectedClass.name}`}
             classInfo={selectedClass}
+            classes={classes}
             onBack={handleBackToHub}
+            onBackToHome={handleBackToWelcome}
+            onSwitchClass={handleSwitchClass}
             onSessionExpired={handleSessionExpired}
           />
         </Suspense>
@@ -409,7 +409,10 @@ export default function App() {
         <Suspense fallback={<ScreenLoading />}>
           <NewestSeatingFrame
             classCode={selectedClass.name}
+            classes={classes}
             onBack={handleBackToHub}
+            onBackToHome={handleBackToWelcome}
+            onSwitchClass={handleSwitchClass}
             active
           />
         </Suspense>
@@ -419,7 +422,10 @@ export default function App() {
           <OverviewApp
             key={`overview:${selectedClass.name}`}
             classInfo={selectedClass}
+            classes={classes}
             onBack={handleBackToHub}
+            onBackToHome={handleBackToWelcome}
+            onSwitchClass={handleSwitchClass}
           />
         </Suspense>
       )}
@@ -433,24 +439,12 @@ export default function App() {
           <DailyReportApp
             key={`daily-report:${selectedClass.name}`}
             classInfo={selectedClass}
+            classes={classes}
             onBack={handleBackToHub}
+            onBackToHome={handleBackToWelcome}
+            onSwitchClass={handleSwitchClass}
           />
         </Suspense>
-      )}
-      {showClassContextBar && (
-        <div className="screen-class-switcher">
-          <span className="screen-class-switcher-label">班级</span>
-          <select
-            value={selectedClass?.name || ''}
-            onChange={(event) => handleSwitchClass(event.target.value)}
-          >
-            {classes.map((item) => (
-              <option key={item.id} value={item.name}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </div>
       )}
       {showReLogin && (
         <ReLoginModal

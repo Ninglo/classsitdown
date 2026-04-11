@@ -3,11 +3,14 @@ import { resolveSeatingKey } from '../utils/classProfiles';
 
 interface Props {
   classCode: string;
+  classes?: { id: string; name: string }[];
   onBack: () => void;
+  onBackToHome?: () => void;
+  onSwitchClass?: (name: string) => void;
   active: boolean;
 }
 
-export default function NewestSeatingFrame({ classCode, onBack, active }: Props) {
+export default function NewestSeatingFrame({ classCode, classes, onBack, onBackToHome, onSwitchClass, active }: Props) {
   const seatingKey = resolveSeatingKey(classCode) ?? classCode;
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -86,8 +89,18 @@ export default function NewestSeatingFrame({ classCode, onBack, active }: Props)
           background: 'rgba(255,255,255,0.95)',
           flexShrink: 0,
         }}>
-          <button className="back-btn" onClick={onBack}>← 返回</button>
-          <span style={{ fontSize: 14, color: '#6a746f' }}>{classCode} · 座位表</span>
+          <div className="tool-nav-bar">
+            <button className="back-btn" onClick={onBack}>← 返回</button>
+            {onBackToHome && <button className="tool-home-btn" onClick={onBackToHome}>🏠 主页</button>}
+          </div>
+          <span style={{ fontSize: 14, color: '#6a746f' }}>
+            {classes && classes.length > 1 && onSwitchClass ? (
+              <select className="tool-class-switch" value={classCode} onChange={(e) => onSwitchClass(e.target.value)}>
+                {classes.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+              </select>
+            ) : classCode}
+            {' '}· 座位表
+          </span>
           <span style={{ marginLeft: 'auto', fontSize: 12, color: '#9aa39f' }}>
             {loadError ? '加载失败' : loaded ? '已预热' : '正在预加载'}
           </span>

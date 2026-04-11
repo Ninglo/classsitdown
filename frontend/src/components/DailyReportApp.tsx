@@ -4,7 +4,10 @@ import './DailyReportApp.css';
 
 interface Props {
   classInfo: ClassInfo;
+  classes?: ClassInfo[];
   onBack: () => void;
+  onBackToHome?: () => void;
+  onSwitchClass?: (name: string) => void;
 }
 
 type ReportMode = 'standard' | 'detail';

@@ -37,7 +37,10 @@ import './OverviewApp.css';
 
 interface Props {
   classInfo: ClassInfo;
+  classes?: ClassInfo[];
   onBack: () => void;
+  onBackToHome?: () => void;
+  onSwitchClass?: (name: string) => void;
 }
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -478,7 +481,7 @@ function shouldShowCustomBlock(block: CustomBlock): boolean {
   return block.media.length > 0 || Boolean(block.title.trim() && block.title.trim() !== '补充内容');
 }
 
-export default function OverviewApp({ classInfo, onBack }: Props) {
+export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, onSwitchClass }: Props) {
   function getPaperMediaWidth(displayWidth?: number): string {
     const width = Math.max(360, Math.min(820, Math.round((displayWidth ?? 160) * 5)));
     return `min(100%, ${width}px)`;

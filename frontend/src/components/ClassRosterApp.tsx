@@ -11,6 +11,7 @@ interface Props {
   classInfo?: ClassInfo | null;
   knownClasses: ClassInfo[];
   onBack: () => void;
+  onBackToHome?: () => void;
   onSessionExpired?: () => void;
 }
 

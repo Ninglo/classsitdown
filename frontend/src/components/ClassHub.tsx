@@ -6,8 +6,10 @@ import './ClassHub.css';
 
 interface Props {
   classInfo: ClassInfo;
+  classes?: ClassInfo[];
   onNavigate: (target: AppScreen) => void;
   onBack: () => void;
+  onSwitchClass?: (name: string) => void;
 }
 
 interface FeatureItem {

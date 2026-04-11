@@ -12,7 +12,10 @@ import './DistributionFlow.css';
 
 interface Props {
   classInfo: ClassInfo;
+  classes?: ClassInfo[];
   onBack: () => void;
+  onBackToHome?: () => void;
+  onSwitchClass?: (name: string) => void;
   onSessionExpired?: () => void;
 }
 
@@ -47,8 +50,10 @@ interface QuickResolveIssue {
 }
 
 const STUDENT_SORT_OPTIONS: Array<{ key: StudentSortKey; label: string }> = [
-  { key: 'en_asc', label: '英文名 A→Z' },
-  { key: 'en_desc', label: '英文名 Z→A' },
+  { key: 'en_asc', label: '英文名 升序' },
+  { key: 'en_desc', label: '英文名 降序' },
+  { key: 'zh_asc', label: '中文名 升序' },
+  { key: 'zh_desc', label: '中文名 降序' },
 ];
 
 function normalizeStudentName(raw: string): string {
@@ -248,7 +253,7 @@ function buildQuickTemplateRows(rewards: QuickDraftReward[]): {
   return { students, mpMap };
 }
 
-export default function DistributionFlow({ classInfo, onBack, onSessionExpired }: Props) {
+export default function DistributionFlow({ classInfo, classes, onBack, onBackToHome, onSwitchClass, onSessionExpired }: Props) {
   const isManual = classInfo.id === 'manual';
   const [manualCode, setManualCode] = useState('');
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
@@ -355,11 +360,16 @@ export default function DistributionFlow({ classInfo, onBack, onSessionExpired }
               value={manualCode}
               onChange={(e) => setManualCode(e.target.value)}
             />
+          ) : classes && classes.length > 1 && onSwitchClass ? (
+            <select className="tool-class-switch" value={classInfo.name} onChange={(e) => onSwitchClass(e.target.value)}>
+              {classes.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
           ) : (
             <span className="flow-class-code">{classInfo.name}</span>
           )}
           <span className="flow-week">Week {week}</span>
         </div>
+        {onBackToHome && <button className="tool-home-btn" onClick={onBackToHome}>🏠 主页</button>}
       </div>
 
       <div className="step-indicator">
@@ -833,8 +843,8 @@ function StepQuick({
                     checked={selectedStudentIds.has(student.studentId)}
                     onChange={() => togglePickerStudent(student.studentId)}
                   />
-                  <span>{student.englishName || student.chineseName}</span>
-                  {student.englishName && <span className="chip-sub">{student.chineseName}</span>}
+                  <span>{student.chineseName}</span>
+                  {student.englishName && <span className="chip-sub">{student.englishName}</span>}
                 </label>
               ))}
             </div>
@@ -858,7 +868,8 @@ function StepQuick({
               {draftRewards.map((reward) => (
                 <div key={reward.studentId} className="quick-draft-item">
                   <div>
-                    <strong>{reward.englishName || reward.chineseName}</strong>
+                    <strong>{reward.chineseName}</strong>
+                    {reward.englishName && <span>{reward.englishName}</span>}
                   </div>
                   <div className="quick-draft-right">
                     <span>{reward.amount} MP</span>
