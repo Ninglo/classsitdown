@@ -37,10 +37,7 @@ import './OverviewApp.css';
 
 interface Props {
   classInfo: ClassInfo;
-  classes?: ClassInfo[];
   onBack: () => void;
-  onBackToHome?: () => void;
-  onSwitchClass?: (name: string) => void;
 }
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -137,10 +134,12 @@ const OVERVIEW_THEME_OPTIONS: Array<{ value: OverviewThemeOption; label: string 
 type StudentPickerTone = 'neutral' | 'foundation' | 'steady' | 'boost';
 
 function getPhaseTone(key: PhaseChallengeRow['key']): StudentPickerTone {
-  if (key === '夯实基础') return 'foundation';
+  if (key === '突破拔高') return 'boost';
   if (key === '维稳达标') return 'steady';
-  return 'boost';
+  return 'foundation';
 }
+
+const PHASE_TIER_ORDER: PhaseChallengeRow['key'][] = ['突破拔高', '维稳达标', '夯实基础'];
 
 function StudentPicker({
   studentNames,
@@ -481,7 +480,7 @@ function shouldShowCustomBlock(block: CustomBlock): boolean {
   return block.media.length > 0 || Boolean(block.title.trim() && block.title.trim() !== '补充内容');
 }
 
-export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, onSwitchClass }: Props) {
+export default function OverviewApp({ classInfo, onBack }: Props) {
   function getPaperMediaWidth(displayWidth?: number): string {
     const width = Math.max(360, Math.min(820, Math.round((displayWidth ?? 160) * 5)));
     return `min(100%, ${width}px)`;
@@ -505,6 +504,8 @@ export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, 
   const [translating, setTranslating] = useState(false);
   const [studentImportInput, setStudentImportInput] = useState('');
   const [studentListCollapsed, setStudentListCollapsed] = useState(false);
+  const [phaseTierCollapsed, setPhaseTierCollapsed] = useState(false);
+  const [activePhaseTier, setActivePhaseTier] = useState<PhaseChallengeRow['key']>('维稳达标');
   const cardRef = useRef<HTMLDivElement>(null);
 
   // Map Chinese name → English name for display throughout the overview
@@ -551,7 +552,17 @@ export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, 
   useEffect(() => {
     setContent((current) => {
       const nextChallenges = syncWeeklyChallengeDays(current.weeklyChallenges, orderedDays);
-      const nextPhases = syncPhaseChallenges(current.phaseChallenges, studentNames);
+      let nextPhases = syncPhaseChallenges(current.phaseChallenges, studentNames);
+      // Auto-default: put unassigned students into 维稳达标
+      const assigned = new Set(nextPhases.flatMap((row) => row.selectedStudents));
+      const unassigned = studentNames.filter((n) => !assigned.has(n));
+      if (unassigned.length > 0) {
+        nextPhases = nextPhases.map((row) =>
+          row.key === '维稳达标'
+            ? { ...row, selectedStudents: sortStudentNames([...row.selectedStudents, ...unassigned]) }
+            : row,
+        );
+      }
       const nextGroups = normalizeCommunicationGroups(current.communicationPlan.groups).map((group) => ({
         ...group,
         selectedStudents: sortStudentNames(group.selectedStudents.filter((name) => studentNames.includes(name))),
@@ -608,6 +619,26 @@ export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, 
     });
     setEditingChineseName(null);
     setEditingValue('');
+  }
+
+  function getStudentPhase(name: string): PhaseChallengeRow['key'] | null {
+    for (const row of content.phaseChallenges) {
+      if (row.selectedStudents.includes(name)) return row.key;
+    }
+    return null;
+  }
+
+  function moveStudentToTier(name: string, tier: PhaseChallengeRow['key']) {
+    updateContent((draft) => ({
+      ...draft,
+      phaseChallenges: draft.phaseChallenges.map((row) => {
+        const without = row.selectedStudents.filter((n) => n !== name);
+        if (row.key === tier) {
+          return { ...row, selectedStudents: sortStudentNames([...without, name]) };
+        }
+        return { ...row, selectedStudents: without };
+      }),
+    }));
   }
 
   function handleWeekChange(nextWeek: number) {
@@ -781,9 +812,9 @@ export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, 
   );
   const visibleCustomBlocks = content.customBlocks.filter(shouldShowCustomBlock);
   const previewTheme = content.theme || 'green';
-  const phasePreviewRows = content.phaseChallenges.filter((row) =>
-    row.selectedStudents.length > 0 || row.challengeContent.trim() || row.method.trim(),
-  );
+  const phasePreviewRows = PHASE_TIER_ORDER
+    .map((tierKey) => content.phaseChallenges.find((r) => r.key === tierKey)!)
+    .filter((row) => row && row.selectedStudents.length > 0 && (row.challengeContent.trim() || row.method.trim()));
   const challengePreviewItems = content.challengeItems.filter(
     (item) => item.title.trim() || item.detail.trim() || item.media.length > 0,
   );
@@ -956,28 +987,83 @@ export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, 
           <section className="ov-editor-section">
             <div className="ov-section-head">
               <h3>② 分阶段挑战</h3>
-              <p>学生勾选、挑战内容、达成途径都会自动记住，后面还能继续改。</p>
+              <div className="ov-section-head-actions">
+                <p>先选层级，再点学生名字把他刷成那个层级。所有学生默认「维稳达标」。</p>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setPhaseTierCollapsed((v) => !v)}
+                >
+                  {phaseTierCollapsed ? '展开分层' : '收起分层'}
+                </button>
+              </div>
             </div>
+
+            {!phaseTierCollapsed && (
+              <>
+                {/* Tier selector tabs — pick which "brush" to paint with */}
+                <div className="ov-phase-tabs">
+                  {PHASE_TIER_ORDER.map((tierKey) => {
+                    const tone = getPhaseTone(tierKey);
+                    const row = content.phaseChallenges.find((r) => r.key === tierKey);
+                    const count = row?.selectedStudents.length ?? 0;
+                    return (
+                      <button
+                        key={tierKey}
+                        className={`ov-phase-tab ov-phase-tab-${tone}${activePhaseTier === tierKey ? ' active' : ''}`}
+                        onClick={() => setActivePhaseTier(tierKey)}
+                      >
+                        {tierKey}
+                        <span className="ov-phase-tab-count">{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* All students always visible, colored by their current tier */}
+                <div className="ov-student-grid ov-phase-tier-grid">
+                  {[...studentNames]
+                    .sort((a, b) => (englishNameMap.get(a) || a).localeCompare(englishNameMap.get(b) || b, 'en', { sensitivity: 'base' }))
+                    .map((name) => {
+                      const currentPhase = getStudentPhase(name) ?? '维稳达标';
+                      const tone = getPhaseTone(currentPhase);
+                      const isActiveTier = currentPhase === activePhaseTier;
+                      return (
+                        <span
+                          key={name}
+                          className={`ov-student-chip ov-student-chip-tone-${tone} active${isActiveTier ? ' ov-chip-selected-tier' : ''}`}
+                          onClick={() => {
+                            if (currentPhase !== activePhaseTier) {
+                              moveStudentToTier(name, activePhaseTier);
+                            }
+                          }}
+                          title={`${englishNameMap.get(name) || name}（${currentPhase}）— 点击移到「${activePhaseTier}」`}
+                        >
+                          {englishNameMap.get(name) || name}
+                        </span>
+                      );
+                    })}
+                </div>
+              </>
+            )}
+
+            {/* Per-tier challenge content + method */}
             <div className="ov-phase-editor-list">
-              {content.phaseChallenges.map((row) => (
-                <section key={row.id} className="ov-phase-editor-card">
-                  <div className="ov-phase-editor-title">{row.label}</div>
-                  <div className="ov-phase-editor-grid">
-                    <div className="ov-phase-cell ov-phase-cell-names">
-                      <div className="ov-phase-subtitle">学生名单</div>
-                      <StudentPicker
-                        studentNames={studentNames}
-                        selected={row.selectedStudents}
-                        onToggle={(name) => togglePhaseStudent(row.id, name)}
-                        tone={getPhaseTone(row.key)}
-                        nameMap={englishNameMap}
-                      />
+              {PHASE_TIER_ORDER
+                .map((tierKey) => content.phaseChallenges.find((r) => r.key === tierKey)!)
+                .filter((row) => row && row.selectedStudents.length > 0)
+                .map((row) => (
+                  <section key={row.id} className="ov-phase-editor-card">
+                    <div className={`ov-phase-editor-title ov-phase-title-${getPhaseTone(row.key)}`}>
+                      {row.label}
+                      <span className="ov-phase-title-count">
+                        {row.selectedStudents.map((n) => englishNameMap.get(n) || n).sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' })).join('、')}
+                      </span>
                     </div>
                     <div className="ov-phase-editor-detail-grid">
                       <div className="ov-phase-cell">
                         <div className="ov-phase-subtitle">具体挑战内容</div>
                         <textarea
-                          rows={5}
+                          rows={4}
                           value={row.challengeContent}
                           placeholder="比如：固定跟读、句型复述、单词滚动复盘"
                           onChange={(event) =>
@@ -993,7 +1079,7 @@ export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, 
                       <div className="ov-phase-cell">
                         <div className="ov-phase-subtitle">达成途径</div>
                         <textarea
-                          rows={5}
+                          rows={4}
                           value={row.method}
                           placeholder="比如：每天 10 分钟 + 课堂抽查"
                           onChange={(event) =>
@@ -1007,9 +1093,8 @@ export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, 
                         />
                       </div>
                     </div>
-                  </div>
-                </section>
-              ))}
+                  </section>
+                ))}
             </div>
           </section>
 
