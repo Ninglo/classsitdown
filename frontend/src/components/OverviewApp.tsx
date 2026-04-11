@@ -132,6 +132,8 @@ const OVERVIEW_THEME_OPTIONS: Array<{ value: OverviewThemeOption; label: string 
   { value: 'blue', label: '海盐蓝' },
   { value: 'rose', label: '玫瑰粉' },
   { value: 'graphite', label: '石墨灰' },
+  { value: 'rainbow', label: '🌈 彩虹乐园' },
+  { value: 'starry', label: '⭐ 星空童话' },
 ];
 
 type StudentPickerTone = 'neutral' | 'foundation' | 'steady' | 'boost';

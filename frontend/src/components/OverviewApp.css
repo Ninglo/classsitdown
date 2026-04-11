@@ -931,3 +931,430 @@ input.ov-student-chip-edit {
     flex-direction: column;
   }
 }
+
+/* ===== 🌈 彩虹乐园 Theme ===== */
+
+.ov-preview-paper.ov-theme-rainbow {
+  --ov-theme-strong: #e25c6a;
+  --ov-theme-soft: rgba(255, 243, 230, 0.96);
+  --ov-theme-line: rgba(255, 160, 100, 0.28);
+  --ov-theme-border: rgba(255, 140, 80, 0.5);
+  --ov-theme-text: #c0392b;
+  --ov-rainbow-blue: #5ba3e6;
+  --ov-rainbow-green: #5cc27b;
+  --ov-rainbow-yellow: #f5c842;
+  --ov-rainbow-pink: #f472b6;
+  --ov-rainbow-purple: #a78bfa;
+  --ov-rainbow-orange: #fb923c;
+  background:
+    linear-gradient(135deg,
+      rgba(255, 230, 230, 0.45) 0%,
+      rgba(255, 245, 220, 0.45) 20%,
+      rgba(220, 255, 230, 0.45) 40%,
+      rgba(220, 240, 255, 0.45) 60%,
+      rgba(240, 225, 255, 0.45) 80%,
+      rgba(255, 230, 240, 0.45) 100%),
+    #fff;
+  border: 3px solid transparent;
+  border-image: linear-gradient(135deg, #f472b6, #fb923c, #f5c842, #5cc27b, #5ba3e6, #a78bfa) 1;
+  border-radius: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* outer decorative border via box-shadow since border-image kills border-radius */
+.ov-preview-paper.ov-theme-rainbow::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border: 2px dashed rgba(251, 146, 60, 0.35);
+  border-radius: 12px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* corner decorations */
+.ov-preview-paper.ov-theme-rainbow::after {
+  content: '🌈';
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  font-size: 32px;
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ov-theme-rainbow .ov-paper-header {
+  border-bottom: 3px solid transparent;
+  border-image: linear-gradient(90deg, #f472b6, #fb923c, #f5c842, #5cc27b, #5ba3e6) 1;
+  padding-bottom: 18px;
+}
+
+.ov-theme-rainbow .ov-paper-class-code {
+  background: linear-gradient(135deg, #fff0f3, #fff5e6);
+  border: 2px solid #f472b6;
+  border-radius: 12px;
+  color: #e25c6a;
+}
+
+.ov-theme-rainbow .ov-paper-meta {
+  border: 2px solid #5ba3e6;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #eef6ff, #f0f0ff);
+}
+
+.ov-theme-rainbow .ov-paper-meta strong {
+  color: #3b82f6;
+}
+
+.ov-theme-rainbow .ov-paper-date-block {
+  border: 2px solid #5cc27b;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #edfff2, #f0fff4);
+}
+
+.ov-theme-rainbow .ov-paper-title {
+  display: inline-block;
+  padding: 6px 16px 6px 12px;
+  border-radius: 20px;
+  color: #fff;
+  font-size: 16px;
+  margin-bottom: 12px;
+}
+
+.ov-theme-rainbow .ov-paper-section:nth-child(6n+1) .ov-paper-title { background: linear-gradient(135deg, #f472b6, #ec4899); }
+.ov-theme-rainbow .ov-paper-section:nth-child(6n+2) .ov-paper-title { background: linear-gradient(135deg, #fb923c, #f97316); }
+.ov-theme-rainbow .ov-paper-section:nth-child(6n+3) .ov-paper-title { background: linear-gradient(135deg, #f5c842, #eab308); color: #7c5e00; }
+.ov-theme-rainbow .ov-paper-section:nth-child(6n+4) .ov-paper-title { background: linear-gradient(135deg, #5cc27b, #22c55e); }
+.ov-theme-rainbow .ov-paper-section:nth-child(6n+5) .ov-paper-title { background: linear-gradient(135deg, #5ba3e6, #3b82f6); }
+.ov-theme-rainbow .ov-paper-section:nth-child(6n+6) .ov-paper-title { background: linear-gradient(135deg, #a78bfa, #8b5cf6); }
+
+.ov-theme-rainbow .ov-paper-week-table {
+  border: 2px solid #5ba3e6;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #5ba3e6;
+}
+
+.ov-theme-rainbow .ov-paper-week-head {
+  background: linear-gradient(180deg, #dbeafe, #c6dcf6);
+  color: #1e40af;
+  font-weight: 800;
+}
+
+.ov-theme-rainbow .ov-paper-week-cell {
+  background: #fff;
+  font-size: 13px;
+}
+
+.ov-theme-rainbow .ov-paper-phase-table {
+  border: 2px solid #5cc27b;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #5cc27b;
+}
+
+.ov-theme-rainbow .ov-paper-phase-head {
+  background: linear-gradient(180deg, #dcfce7, #bbf7d0);
+  color: #166534;
+  font-weight: 800;
+}
+
+.ov-theme-rainbow .ov-paper-phase-stage {
+  background: rgba(240, 253, 244, 0.95);
+  font-weight: 700;
+  color: #15803d;
+}
+
+.ov-theme-rainbow .ov-paper-task {
+  border: 2px solid rgba(251, 146, 60, 0.35);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fffbf5, #fff);
+}
+
+.ov-theme-rainbow .ov-paper-task-index {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  color: #92400e;
+  font-weight: 800;
+  border-radius: 999px;
+}
+
+.ov-theme-rainbow .ov-paper-task h4 {
+  color: #ea580c;
+}
+
+.ov-theme-rainbow .ov-paper-figure {
+  border: 2px solid rgba(167, 139, 250, 0.4);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.ov-theme-rainbow .ov-paper-listening {
+  border: 2px solid rgba(167, 139, 250, 0.4);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #faf5ff, #fff);
+}
+
+.ov-theme-rainbow .ov-paper-listening-row {
+  border-bottom-color: rgba(167, 139, 250, 0.2);
+}
+
+.ov-theme-rainbow .ov-paper-word {
+  color: #7c3aed;
+}
+
+.ov-theme-rainbow .ov-paper-meaning {
+  color: #a855f7;
+}
+
+.ov-theme-rainbow .ov-paper-comm-group {
+  border: 2px solid rgba(244, 114, 182, 0.35);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fff5f8, #fff);
+}
+
+.ov-theme-rainbow .ov-paper-comm-students {
+  border: 1px solid rgba(244, 114, 182, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 241, 245, 0.6);
+}
+
+.ov-theme-rainbow .ov-paper-custom-table {
+  border: 2px solid #5ba3e6;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #5ba3e6;
+}
+
+.ov-theme-rainbow .ov-paper-custom-head {
+  background: linear-gradient(180deg, #dbeafe, #c6dcf6);
+  color: #1e40af;
+  font-weight: 800;
+}
+
+/* ===== ⭐ 星空童话 Theme ===== */
+
+.ov-preview-paper.ov-theme-starry {
+  --ov-theme-strong: #d97706;
+  --ov-theme-soft: rgba(255, 248, 230, 0.96);
+  --ov-theme-line: rgba(234, 179, 8, 0.25);
+  --ov-theme-border: rgba(217, 119, 6, 0.45);
+  --ov-theme-text: #92400e;
+  background:
+    radial-gradient(circle at 15% 85%, rgba(253, 230, 138, 0.25) 0%, transparent 40%),
+    radial-gradient(circle at 85% 15%, rgba(254, 215, 170, 0.25) 0%, transparent 40%),
+    radial-gradient(circle at 50% 50%, rgba(255, 251, 235, 0.6) 0%, transparent 70%),
+    linear-gradient(180deg, #fffdf5 0%, #fff9eb 50%, #fffdf5 100%);
+  border: 3px solid #f59e0b;
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* inner dashed border */
+.ov-preview-paper.ov-theme-starry::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border: 2px dashed rgba(245, 158, 11, 0.3);
+  border-radius: 12px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* decorative stars */
+.ov-preview-paper.ov-theme-starry::after {
+  content: '⭐✨⭐';
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  font-size: 22px;
+  letter-spacing: 4px;
+  opacity: 0.65;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ov-theme-starry .ov-paper-header {
+  border-bottom: 3px solid #f59e0b;
+  padding-bottom: 18px;
+  position: relative;
+}
+
+.ov-theme-starry .ov-paper-class-code {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border: 2px solid #f59e0b;
+  border-radius: 14px;
+  color: #92400e;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.ov-theme-starry .ov-paper-meta {
+  border: 2px solid #fbbf24;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #fffbeb, #fef9c3);
+}
+
+.ov-theme-starry .ov-paper-meta strong {
+  color: #b45309;
+}
+
+.ov-theme-starry .ov-paper-date-block {
+  border: 2px solid #fbbf24;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #fffbeb, #fef9c3);
+}
+
+.ov-theme-starry .ov-paper-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 18px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #fff;
+  font-size: 16px;
+  margin-bottom: 12px;
+  text-shadow: 0 1px 2px rgba(146, 64, 14, 0.3);
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.25);
+}
+
+.ov-theme-starry .ov-paper-section {
+  position: relative;
+}
+
+/* alternating warm tones for section backgrounds */
+.ov-theme-starry .ov-paper-section:nth-child(odd) {
+  padding: 14px;
+  margin-left: -14px;
+  margin-right: -14px;
+  border-radius: 14px;
+  background: rgba(255, 251, 235, 0.5);
+}
+
+.ov-theme-starry .ov-paper-week-table {
+  border: 2px solid #f59e0b;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f59e0b;
+}
+
+.ov-theme-starry .ov-paper-week-head {
+  background: linear-gradient(180deg, #fef3c7, #fde68a);
+  color: #92400e;
+  font-weight: 800;
+}
+
+.ov-theme-starry .ov-paper-week-cell {
+  background: #fffdf5;
+}
+
+.ov-theme-starry .ov-paper-phase-table {
+  border: 2px solid #e68a3c;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #e68a3c;
+}
+
+.ov-theme-starry .ov-paper-phase-head {
+  background: linear-gradient(180deg, #fed7aa, #fdba74);
+  color: #7c2d12;
+  font-weight: 800;
+}
+
+.ov-theme-starry .ov-paper-phase-stage {
+  background: rgba(255, 247, 237, 0.95);
+  color: #9a3412;
+  font-weight: 700;
+}
+
+.ov-theme-starry .ov-paper-phase-cell {
+  background: #fffcf5;
+}
+
+.ov-theme-starry .ov-paper-task {
+  border: 2px solid rgba(251, 191, 36, 0.4);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fffdf5, #fff);
+  position: relative;
+}
+
+.ov-theme-starry .ov-paper-task::before {
+  content: '⭐';
+  position: absolute;
+  top: -6px;
+  left: 12px;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.ov-theme-starry .ov-paper-task-index {
+  background: linear-gradient(135deg, #fde68a, #fbbf24);
+  color: #78350f;
+  font-weight: 800;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.ov-theme-starry .ov-paper-task h4 {
+  color: #b45309;
+}
+
+.ov-theme-starry .ov-paper-figure {
+  border: 2px solid rgba(245, 158, 11, 0.35);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.ov-theme-starry .ov-paper-listening {
+  border: 2px solid rgba(234, 179, 8, 0.4);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fffdf5, #fffbeb);
+}
+
+.ov-theme-starry .ov-paper-listening-row {
+  border-bottom: 1px dashed rgba(234, 179, 8, 0.3);
+}
+
+.ov-theme-starry .ov-paper-word {
+  color: #b45309;
+}
+
+.ov-theme-starry .ov-paper-meaning {
+  color: #d97706;
+}
+
+.ov-theme-starry .ov-paper-comm-group {
+  border: 2px solid rgba(251, 191, 36, 0.4);
+  border-radius: 14px;
+  background: linear-gradient(135deg, #fffbeb, #fff);
+}
+
+.ov-theme-starry .ov-paper-comm-students {
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 10px;
+  background: rgba(255, 251, 235, 0.6);
+}
+
+.ov-theme-starry .ov-paper-custom-table {
+  border: 2px solid #e68a3c;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #e68a3c;
+}
+
+.ov-theme-starry .ov-paper-custom-head {
+  background: linear-gradient(180deg, #fed7aa, #fdba74);
+  color: #7c2d12;
+  font-weight: 800;
+}
+
+.ov-theme-starry .ov-paper-custom-cell {
+  background: #fffcf5;
+}
+
+.ov-theme-starry .ov-paper-empty {
+  border-color: rgba(251, 191, 36, 0.4);
+  border-radius: 10px;
+  background: rgba(255, 251, 235, 0.7);
+}
