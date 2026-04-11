@@ -1507,21 +1507,12 @@ export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, 
         <div className="ov-preview">
           <div className={`ov-preview-paper ov-theme-${previewTheme}`} ref={cardRef}>
             <header className="ov-paper-header">
-              <div className="ov-paper-header-grid">
-                <div className="ov-paper-class-code">{classCode}</div>
-                <div className="ov-paper-meta">
-                  <span>课程概览</span>
-                  <strong>Week {week}</strong>
-                </div>
-              </div>
-              <div className="ov-paper-date-block">
-                <span>{formatDateShort(weekRange.start)} - {formatDateShort(weekRange.end)}</span>
-              </div>
+              <div className="ov-paper-class-code">{classCode} Week {week}</div>
             </header>
 
             {showWeeklyChallenges && (
               <section className="ov-paper-section">
-                <div className="ov-paper-title">① 本周挑战</div>
+                <div className="ov-paper-title">1. 本周挑战</div>
                 <div className="ov-paper-week-table" style={{ gridTemplateColumns: `repeat(${weeklyChallengeRows.length}, minmax(0, 1fr))` }}>
                   {weeklyChallengeRows.map((item) => (
                     <div key={`${item.day}_preview_head`} className="ov-paper-week-head">{item.day}</div>
@@ -1535,7 +1526,7 @@ export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, 
 
             {phasePreviewRows.length > 0 && (
               <section className="ov-paper-section">
-                <div className="ov-paper-title">② 分阶段挑战</div>
+                <div className="ov-paper-title">2. 分阶段挑战</div>
                 <div className="ov-paper-phase-table">
                   <div className="ov-paper-phase-head">阶段</div>
                   <div className="ov-paper-phase-head">学生名单</div>
@@ -1555,7 +1546,7 @@ export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, 
 
             {challengePreviewItems.length > 0 && (
               <section className="ov-paper-section">
-                <div className="ov-paper-title">③ 本周挑战内容</div>
+                <div className="ov-paper-title">3. 本周挑战内容</div>
                 <div className="ov-paper-stack">
                   {challengePreviewItems.map((item: ChallengeItem, index) => (
                       <article key={item.id} className="ov-paper-task">
@@ -1580,7 +1571,7 @@ export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, 
 
             {listeningPreviewItems.length > 0 && (
               <section className="ov-paper-section">
-                <div className="ov-paper-title">④ 下周听读语料</div>
+                <div className="ov-paper-title">4. 下周听读语料</div>
                 <div className={`ov-paper-listening ov-paper-listening-${content.listeningFont}`}>
                   {listeningPreviewItems.map((item: ListeningMaterialItem) => (
                       <div key={item.id} className="ov-paper-listening-row">
@@ -1594,7 +1585,7 @@ export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, 
 
             {showCommunicationSection && (
               <section className="ov-paper-section">
-                <div className="ov-paper-title">⑤ 交流名单</div>
+                <div className="ov-paper-title">5. 交流名单</div>
                 <div className="ov-paper-comm-groups">
                   {previewCommunicationGroups.map((group, index) => (
                     <article key={group.id} className="ov-paper-comm-group">
@@ -1615,7 +1606,7 @@ export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, 
 
             {visibleCustomBlocks.map((block) => (
               <section key={block.id} className="ov-paper-section">
-                <div className="ov-paper-title">⑥ {block.title.trim() || '补充内容'}</div>
+                <div className="ov-paper-title">6. {block.title.trim() || '补充内容'}</div>
                 {block.mode === 'text' && <p className="ov-paper-paragraph">{block.text.trim() || '暂无内容'}</p>}
                 {block.mode === 'table' && (
                   <div className="ov-paper-custom-table" style={{ gridTemplateColumns: `repeat(${block.table.columns.length}, minmax(0, 1fr))` }}>

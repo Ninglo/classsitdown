@@ -604,17 +604,8 @@ input.ov-student-chip-edit {
 }
 
 .ov-paper-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: stretch;
   padding-bottom: 16px;
   border-bottom: 2px solid var(--ov-theme-border);
-}
-
-.ov-paper-header-grid {
-  display: grid;
-  gap: 6px;
 }
 
 .ov-paper-class-code {
@@ -998,22 +989,6 @@ input.ov-student-chip-edit {
   color: #e25c6a;
 }
 
-.ov-theme-rainbow .ov-paper-meta {
-  border: 2px solid #5ba3e6;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #eef6ff, #f0f0ff);
-}
-
-.ov-theme-rainbow .ov-paper-meta strong {
-  color: #3b82f6;
-}
-
-.ov-theme-rainbow .ov-paper-date-block {
-  border: 2px solid #5cc27b;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #edfff2, #f0fff4);
-}
-
 .ov-theme-rainbow .ov-paper-title {
   display: inline-block;
   padding: 6px 16px 6px 12px;
@@ -1190,21 +1165,6 @@ input.ov-student-chip-edit {
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
-.ov-theme-starry .ov-paper-meta {
-  border: 2px solid #fbbf24;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #fffbeb, #fef9c3);
-}
-
-.ov-theme-starry .ov-paper-meta strong {
-  color: #b45309;
-}
-
-.ov-theme-starry .ov-paper-date-block {
-  border: 2px solid #fbbf24;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #fffbeb, #fef9c3);
-}
 
 .ov-theme-starry .ov-paper-title {
   display: inline-flex;
