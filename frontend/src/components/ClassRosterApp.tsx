@@ -331,7 +331,7 @@ export default function ClassRosterApp({ classInfo, knownClasses, onBack, onBack
         </button>
       )}
       <div className="roster-topbar">
-        <button className="back-btn" onClick={onBack}>← 返回</button>
+        <button className="tool-back-btn" onClick={onBack}>← 返回</button>
         <div className="roster-title">
           <strong>批量导入名单</strong>
           <span>把学号 / 中文名 / 英文名整理在一起，后面查班级和继续处理都会更方便</span>

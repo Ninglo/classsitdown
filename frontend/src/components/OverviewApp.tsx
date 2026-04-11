@@ -834,16 +834,16 @@ export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, 
         </button>
       )}
       <div className="ov-toolbar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button className="back-btn" onClick={onBack}>← 返回</button>
+        <div className="tool-topbar">
+          <button className="tool-back-btn" onClick={onBack}>← 返回</button>
           {classes && classes.length > 1 && onSwitchClass ? (
             <select className="tool-class-switch" value={classCode} onChange={(e) => onSwitchClass(e.target.value)}>
               {classes.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>
           ) : (
-            <strong style={{ fontSize: 16, color: 'var(--gray-900)' }}>{classCode}</strong>
+            <span className="tool-class-switch" style={{ cursor: 'default' }}>{classCode}</span>
           )}
-          <span style={{ fontSize: 12, color: 'var(--gray-500)' }}>{formatDateShort(weekRange.start)} - {formatDateShort(weekRange.end)}</span>
+          <span className="tool-topbar-label">{formatDateShort(weekRange.start)} - {formatDateShort(weekRange.end)}</span>
         </div>
         <div className="ov-toolbar-actions">
           <select

@@ -1416,8 +1416,71 @@ button:disabled {
   z-index: 90;
 }
 
+.rotation-config {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: var(--surface-soft);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.rotation-config-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.rotation-config-row label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rotation-config-row select {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--field-bg);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.roster-diff-banner {
+  margin-top: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.roster-diff-ok {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #a5d6a7;
+}
+
+.roster-diff-warn {
+  background: #fff8e1;
+  color: #795548;
+  border: 1px solid #ffe082;
+}
+
+.diff-missing {
+  color: #c62828;
+}
+
+.diff-extra {
+  color: #e65100;
+}
+
 .editor-view.editor-tools-collapsed .class-selector,
 .editor-view.editor-tools-collapsed .controls,
+.editor-view.editor-tools-collapsed .rotation-config,
+.editor-view.editor-tools-collapsed .roster-diff-banner,
 .editor-view.editor-tools-collapsed .save-button {
   display: none;
 }

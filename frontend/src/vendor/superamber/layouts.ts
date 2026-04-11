@@ -1,4 +1,4 @@
-import type { ArcGroups, LayoutType, RowGroups } from './types';
+import type { ArcGroups, GroupRotation, InternalRotation, LayoutType, RotationConfig, RowGroups } from './types';
 import { ARC_ROW_SIZE, CIRCULAR_GROUP_SIZE, ROW_GROUP_SIZE, makeEmptyArcGroups, makeEmptyCircularGroups, makeEmptyRowGroups } from './state';
 
 const CIRCULAR_THRESHOLD = [
@@ -208,13 +208,34 @@ export const collectStudentsFromArc = (arcGroups: ArcGroups): string[] => {
   return arcGroups.rows.flatMap((row) => row.map((name) => name.trim()).filter(Boolean));
 };
 
+const internalShiftValue = (mode: InternalRotation): number => {
+  switch (mode) {
+    case 'none': return 0;
+    case 'right1': return 1;
+    case 'right2': return 2;
+    case 'left1': return -1;
+    case 'left2': return -2;
+    default: return 2;
+  }
+};
+
+export const defaultRotationConfig = (layout: LayoutType): RotationConfig => {
+  if (layout === 'circular') return { groupRotation: 'clockwise', internalRotation: 'right2' };
+  if (layout === 'rows') return { groupRotation: 'snake', internalRotation: 'right1' };
+  return { groupRotation: 'clockwise', internalRotation: 'right2' };
+};
+
 export const getCircularGroupCountFromGroups = (groups: string[][]): number => countNonEmptyGroups(groups);
 
 export const getRowsGroupCountFromGroups = (rowGroups: RowGroups): number =>
   countNonEmptyGroups(rowGroupsToSlotGroups(rowGroups));
 
-export const rotateCircularLayoutForWeek = (groups: string[][]): string[][] => {
-  const internalRotated = groups.map((group) => rotateNames(copyGroup(group, CIRCULAR_GROUP_SIZE), 2));
+export const rotateCircularLayoutForWeek = (groups: string[][], config?: RotationConfig | null): string[][] => {
+  const rc = config ?? defaultRotationConfig('circular');
+  const shift = internalShiftValue(rc.internalRotation);
+  const internalRotated = shift === 0
+    ? groups.map((group) => copyGroup(group, CIRCULAR_GROUP_SIZE))
+    : groups.map((group) => rotateNames(copyGroup(group, CIRCULAR_GROUP_SIZE), shift));
   const activeCount = getCircularGroupCountFromGroups(internalRotated);
   if (activeCount <= 1) {
     return internalRotated;
@@ -229,8 +250,11 @@ export const rotateCircularLayoutForWeek = (groups: string[][]): string[][] => {
     rotated[index] = copyGroup(internalRotated[index], CIRCULAR_GROUP_SIZE);
   });
 
+  const direction = rc.groupRotation === 'counterclockwise' ? 1 : -1;
+
   activeSlots.forEach((targetSlot, index) => {
-    const sourceSlot = activeSlots[(index - 1 + activeSlots.length) % activeSlots.length];
+    const sourceIdx = ((index + direction) % activeSlots.length + activeSlots.length) % activeSlots.length;
+    const sourceSlot = activeSlots[sourceIdx];
     const targetGroup = slotMap[targetSlot];
     const sourceGroup = slotMap[sourceSlot];
     if (targetGroup === null || sourceGroup === null) {
@@ -242,14 +266,18 @@ export const rotateCircularLayoutForWeek = (groups: string[][]): string[][] => {
   return rotated;
 };
 
-export const rotateCircularGroupOrderForWeek = (groupOrder: number[], activeCount: number): number[] => {
+export const rotateCircularGroupOrderForWeek = (groupOrder: number[], activeCount: number, config?: RotationConfig | null): number[] => {
+  const rc = config ?? defaultRotationConfig('circular');
   const slotMap = getCircularSlotMap(activeCount);
   const clockwiseOrder = [0, 1, 2, 3, 4, 5];
   const activeSlots = clockwiseOrder.filter((slot) => slotMap[slot] !== null);
   const rotated = [...groupOrder];
 
+  const direction = rc.groupRotation === 'counterclockwise' ? 1 : -1;
+
   activeSlots.forEach((targetSlot, index) => {
-    const sourceSlot = activeSlots[(index - 1 + activeSlots.length) % activeSlots.length];
+    const sourceIdx = ((index + direction) % activeSlots.length + activeSlots.length) % activeSlots.length;
+    const sourceSlot = activeSlots[sourceIdx];
     const targetGroup = slotMap[targetSlot];
     const sourceGroup = slotMap[sourceSlot];
     if (targetGroup === null || sourceGroup === null) {
@@ -261,7 +289,14 @@ export const rotateCircularGroupOrderForWeek = (groupOrder: number[], activeCoun
   return rotated;
 };
 
-export const rotateRowsLayoutForWeek = (rowGroups: RowGroups): RowGroups => {
+const ROWS_GROUP_PATHS: Record<GroupRotation, number[]> = {
+  snake: [0, 2, 4, 1, 3, 5],
+  clockwise: [0, 1, 3, 2, 4, 5],
+  counterclockwise: [0, 1, 3, 2, 4, 5],
+};
+
+export const rotateRowsLayoutForWeek = (rowGroups: RowGroups, config?: RotationConfig | null): RowGroups => {
+  const rc = config ?? defaultRotationConfig('rows');
   const slotGroups = rowGroupsToSlotGroups(rowGroups);
   const activeCount = countNonEmptyGroups(slotGroups);
   if (activeCount <= 1) {
@@ -269,21 +304,31 @@ export const rotateRowsLayoutForWeek = (rowGroups: RowGroups): RowGroups => {
   }
 
   const slotMap = getRowsSlotMap(activeCount);
-  const internalRotated = slotGroups.map((group) => rotateNames(copyGroup(group, ROW_GROUP_SIZE), 1));
-  const rotationPath = [0, 2, 4, 1, 3, 5];
+  const shift = internalShiftValue(rc.internalRotation);
+  const internalRotated = shift === 0
+    ? slotGroups.map((group) => copyGroup(group, ROW_GROUP_SIZE))
+    : slotGroups.map((group) => rotateNames(copyGroup(group, ROW_GROUP_SIZE), shift));
+
+  const rotationPath = ROWS_GROUP_PATHS[rc.groupRotation] || ROWS_GROUP_PATHS.snake;
   const activeSlots = rotationPath.filter((slotIndex) => slotMap[slotIndex] !== null);
   const rotatedSlots = Array.from({ length: 6 }, () => Array(ROW_GROUP_SIZE).fill(''));
 
+  const direction = rc.groupRotation === 'counterclockwise' ? 1 : -1;
+
   activeSlots.forEach((targetSlot, index) => {
-    const sourceSlot = activeSlots[(index - 1 + activeSlots.length) % activeSlots.length];
+    const sourceIdx = ((index + direction) % activeSlots.length + activeSlots.length) % activeSlots.length;
+    const sourceSlot = activeSlots[sourceIdx];
     rotatedSlots[targetSlot] = copyGroup(internalRotated[sourceSlot], ROW_GROUP_SIZE);
   });
 
   return slotGroupsToRowGroups(rotatedSlots);
 };
 
-export const rotateArcLayoutForWeek = (arcGroups: ArcGroups): ArcGroups => {
-  const rows = arcGroups.rows.map((row) => rotateNames(copyGroup(row, ARC_ROW_SIZE), 2));
+export const rotateArcLayoutForWeek = (arcGroups: ArcGroups, config?: RotationConfig | null): ArcGroups => {
+  const rc = config ?? defaultRotationConfig('arc');
+  const shift = internalShiftValue(rc.internalRotation);
+  if (shift === 0) return arcGroups;
+  const rows = arcGroups.rows.map((row) => rotateNames(copyGroup(row, ARC_ROW_SIZE), shift));
   return { rows };
 };
 

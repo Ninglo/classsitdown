@@ -3,6 +3,7 @@ import type {
   ArcGroups,
   ClassData,
   LayoutType,
+  RotationConfig,
   LocationInfo,
   RowGroups,
   ReminderMeta,
@@ -84,5 +85,6 @@ export const createInitialState = (): AppState => ({
   rowGroups: makeEmptyRowGroups(),
   arcGroups: makeEmptyArcGroups(),
   classData: {} as ClassData,
-  userProfile: makeDefaultProfile()
+  userProfile: makeDefaultProfile(),
+  rotationConfig: { groupRotation: 'clockwise', internalRotation: 'right2' }
 });

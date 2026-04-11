@@ -353,26 +353,24 @@ export default function DistributionFlow({ classInfo, classes, onBack, onBackToH
           <span>返回主页</span>
         </button>
       )}
-      <div className="flow-topbar">
-        <button className="back-btn" onClick={onBack}>← 返回</button>
-        <div className="flow-class-tag">
-          {isManual ? (
-            <input
-              className="flow-class-input"
-              type="text"
-              placeholder="输入班级号"
-              value={manualCode}
-              onChange={(e) => setManualCode(e.target.value)}
-            />
-          ) : classes && classes.length > 1 && onSwitchClass ? (
-            <select className="tool-class-switch" value={classInfo.name} onChange={(e) => onSwitchClass(e.target.value)}>
-              {classes.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
-          ) : (
-            <span className="flow-class-code">{classInfo.name}</span>
-          )}
-          <span className="flow-week">Week {week}</span>
-        </div>
+      <div className="tool-topbar flow-topbar">
+        <button className="tool-back-btn" onClick={onBack}>← 返回</button>
+        {isManual ? (
+          <input
+            className="flow-class-input"
+            type="text"
+            placeholder="输入班级号"
+            value={manualCode}
+            onChange={(e) => setManualCode(e.target.value)}
+          />
+        ) : classes && classes.length > 1 && onSwitchClass ? (
+          <select className="tool-class-switch" value={classInfo.name} onChange={(e) => onSwitchClass(e.target.value)}>
+            {classes.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+          </select>
+        ) : (
+          <span className="flow-class-code">{classInfo.name}</span>
+        )}
+        <span className="tool-topbar-label">Week {week}</span>
       </div>
 
       <div className="step-indicator">

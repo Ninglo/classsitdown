@@ -269,7 +269,29 @@ export const appTemplate = `
       <button id="syncOtherModeBtn" onclick="copyCurrentToOtherMode()">一键同名单</button>
       <button onclick="toggleLayout()">切换布局</button>
       <button onclick="generateSeating()">手动轮转</button>
+      <button onclick="syncFromCoreRoster()">同步核心名单</button>
     </div>
+    <div class="rotation-config" id="rotationConfig">
+      <div class="rotation-config-row">
+        <label>大组轮转</label>
+        <select id="groupRotationSelect">
+          <option value="clockwise">顺时针</option>
+          <option value="counterclockwise">逆时针</option>
+          <option value="snake">蛇形</option>
+        </select>
+      </div>
+      <div class="rotation-config-row">
+        <label>组内轮转</label>
+        <select id="internalRotationSelect">
+          <option value="none">不轮转</option>
+          <option value="right1">向右 +1</option>
+          <option value="right2">向右 +2</option>
+          <option value="left1">向左 +1</option>
+          <option value="left2">向左 +2</option>
+        </select>
+      </div>
+    </div>
+    <div class="roster-diff-banner" id="rosterDiffBanner" style="display:none"></div>
   </section>
 
   <div class="save-dialog dialog" id="saveDialog">

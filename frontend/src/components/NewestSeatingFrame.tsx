@@ -83,27 +83,28 @@ export default function NewestSeatingFrame({ classCode, classes, onBack, onBackT
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 12,
-          padding: '10px 16px',
-          borderBottom: '1px solid rgba(221,217,208,0.55)',
+          gap: 8,
+          padding: '8px 16px',
+          borderBottom: '1px solid rgba(221,217,208,0.4)',
           background: 'rgba(255,255,255,0.95)',
+          backdropFilter: 'blur(16px)',
           flexShrink: 0,
         }}>
           {onBackToHome && (
-            <button className="tool-home-rail" style={{ position: 'static', padding: '6px 12px', fontSize: 12 }} onClick={onBackToHome}>
-              <span className="tool-home-rail-icon" style={{ width: 16, height: 16 }}>←</span>
+            <button className="tool-home-rail" style={{ position: 'static' }} onClick={onBackToHome}>
+              <span className="tool-home-rail-icon">←</span>
               <span>主页</span>
             </button>
           )}
-          <button className="back-btn" onClick={onBack}>← 返回</button>
-          <span style={{ fontSize: 14, color: '#6a746f' }}>
-            {classes && classes.length > 1 && onSwitchClass ? (
-              <select className="tool-class-switch" value={classCode} onChange={(e) => onSwitchClass(e.target.value)}>
-                {classes.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-              </select>
-            ) : classCode}
-            {' '}· 座位表
-          </span>
+          <button className="tool-back-btn" onClick={onBack}>← 返回</button>
+          {classes && classes.length > 1 && onSwitchClass ? (
+            <select className="tool-class-switch" value={classCode} onChange={(e) => onSwitchClass(e.target.value)}>
+              {classes.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          ) : (
+            <span className="tool-class-switch" style={{ cursor: 'default' }}>{classCode}</span>
+          )}
+          <span className="tool-topbar-label">· 座位表</span>
           <span style={{ marginLeft: 'auto', fontSize: 12, color: '#9aa39f' }}>
             {loadError ? '加载失败' : loaded ? '已预热' : '正在预加载'}
           </span>

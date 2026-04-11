@@ -27,7 +27,8 @@ import {
   rotateCircularGroupOrderForWeek,
   rotateArcLayoutForWeek,
   rotateCircularLayoutForWeek,
-  rotateRowsLayoutForWeek
+  rotateRowsLayoutForWeek,
+  defaultRotationConfig
 } from './layouts';
 import { getDefaultOCREndpoint, loadOCRSettings, saveOCRSettings } from './ocrSettings';
 import { refreshSeating, renderModePreview, setRenderQueryRoot } from './render';
@@ -324,6 +325,87 @@ const createClassFromKnownRoster = (className: string): void => {
   setCurrentView('editor');
   importCircularLayout(shuffleStudents(students));
   renderClassOverview();
+};
+
+const syncFromCoreRoster = (): void => {
+  const className = activeClassName.trim();
+  if (!className) {
+    alert('请先选择一个班级。');
+    return;
+  }
+  const rosterNames = loadKnownRosterForClass(className);
+  if (rosterNames.length === 0) {
+    alert(`未找到 ${className} 的核心名单。请先在主站"一键抓取全部名单"或"班级名单检查"中导入。`);
+    return;
+  }
+
+  const currentStudents = state.currentLayout === 'circular'
+    ? collectStudentsFromCircular(state.groups)
+    : state.currentLayout === 'rows'
+      ? collectStudentsFromRows(state.rowGroups)
+      : collectStudentsFromArc(state.arcGroups);
+
+  if (currentStudents.length > 0) {
+    const ok = window.confirm(
+      `当前座位表有 ${currentStudents.length} 人，核心名单有 ${rosterNames.length} 人。\n\n是否用核心名单重新随机生成座位表？（当前座位会被覆盖）`
+    );
+    if (!ok) return;
+  }
+
+  importCircularLayout(shuffleStudents(rosterNames));
+  refresh();
+  saveCurrentClassMode();
+  updateRosterDiffBanner();
+  alert(`已用 ${rosterNames.length} 人核心名单随机生成座位表。`);
+};
+
+const updateRosterDiffBanner = (): void => {
+  const banner = byId<HTMLDivElement>('rosterDiffBanner');
+  const className = activeClassName.trim();
+  if (!className) {
+    banner.style.display = 'none';
+    return;
+  }
+
+  const rosterNames = loadKnownRosterForClass(className);
+  if (rosterNames.length === 0) {
+    banner.style.display = 'none';
+    return;
+  }
+
+  const currentStudents = state.currentLayout === 'circular'
+    ? collectStudentsFromCircular(state.groups)
+    : state.currentLayout === 'rows'
+      ? collectStudentsFromRows(state.rowGroups)
+      : collectStudentsFromArc(state.arcGroups);
+
+  if (currentStudents.length === 0) {
+    banner.style.display = 'none';
+    return;
+  }
+
+  const rosterSet = new Set(rosterNames);
+  const seatingSet = new Set(currentStudents);
+  const extra = currentStudents.filter((name) => !rosterSet.has(name));
+  const missing = rosterNames.filter((name) => !seatingSet.has(name));
+
+  if (extra.length === 0 && missing.length === 0) {
+    banner.style.display = '';
+    banner.className = 'roster-diff-banner roster-diff-ok';
+    banner.textContent = `✓ 座位表与核心名单一致（${rosterNames.length} 人）`;
+    return;
+  }
+
+  const parts: string[] = [];
+  if (missing.length > 0) {
+    parts.push(`<span class="diff-missing">核心名单有但座位表没有（${missing.length}人）：${missing.join('、')}</span>`);
+  }
+  if (extra.length > 0) {
+    parts.push(`<span class="diff-extra">座位表有但核心名单没有（${extra.length}人）：${extra.join('、')}</span>`);
+  }
+  banner.style.display = '';
+  banner.className = 'roster-diff-banner roster-diff-warn';
+  banner.innerHTML = parts.join('<br>');
 };
 
 const saveProfile = (): void => {
@@ -1161,7 +1243,8 @@ const captureCurrentModeData = (): ClassConfig[TimeMode] => ({
   rowGroups: state.currentLayout === 'rows' ? JSON.parse(JSON.stringify(state.rowGroups)) : null,
   arcGroups: state.currentLayout === 'arc' ? JSON.parse(JSON.stringify(state.arcGroups)) : null,
   currentArrangement: state.currentArrangement,
-  locationInfo: getLocationInfo()
+  locationInfo: getLocationInfo(),
+  rotationConfig: { ...state.rotationConfig }
 });
 
 const ensureClassShell = (className: string): void => {
@@ -1228,6 +1311,8 @@ const loadClass = (): void => {
     state.currentLayout = 'circular';
     resetLayoutData();
     state.currentArrangement = 0;
+    state.rotationConfig = defaultRotationConfig('circular');
+    syncRotationSelectors();
     setLocationInfo(makeEmptyLocationInfo());
     headerClassName().value = className || '';
     syncEditorThemeSelect(state.userProfile.theme);
@@ -1261,6 +1346,11 @@ const loadClass = (): void => {
     state.rowGroups = makeEmptyRowGroups();
   }
 
+  state.rotationConfig = data.rotationConfig
+    ? { ...data.rotationConfig }
+    : defaultRotationConfig(state.currentLayout);
+  syncRotationSelectors();
+
   setLocationInfo(data.locationInfo);
   headerClassName().value = className;
   const classTheme = getClassTheme(className);
@@ -1271,6 +1361,7 @@ const loadClass = (): void => {
   updateSyncModeButton();
   updateEditorFloatingContext();
   renderReminderSummary();
+  updateRosterDiffBanner();
 };
 
 const applyTimeModeUi = (mode: TimeMode): void => {
@@ -1703,12 +1794,14 @@ const rotateSingleClassMode = (mode: ClassConfig[TimeMode], rotateDate: boolean)
     ? rotateLocationByWeek(sanitizeLocationInfo(mode.locationInfo))
     : sanitizeLocationInfo(mode.locationInfo);
 
+  const rc = mode.rotationConfig ?? defaultRotationConfig(mode.layout);
+
   if (mode.layout === 'circular') {
     const activeCount = getCircularGroupCountFromGroups(mode.groups || makeEmptyCircularGroups());
     return {
       ...mode,
-      groups: rotateCircularLayoutForWeek(mode.groups || makeEmptyCircularGroups()),
-      groupOrder: rotateCircularGroupOrderForWeek(mode.groupOrder || [1, 2, 3, 4, 5, 6], activeCount),
+      groups: rotateCircularLayoutForWeek(mode.groups || makeEmptyCircularGroups(), rc),
+      groupOrder: rotateCircularGroupOrderForWeek(mode.groupOrder || [1, 2, 3, 4, 5, 6], activeCount, rc),
       currentArrangement: (mode.currentArrangement + 1) % 200,
       locationInfo: nextLocationInfo
     };
@@ -1717,7 +1810,7 @@ const rotateSingleClassMode = (mode: ClassConfig[TimeMode], rotateDate: boolean)
   if (mode.layout === 'rows') {
     return {
       ...mode,
-      rowGroups: rotateRowsLayoutForWeek(mode.rowGroups || makeEmptyRowGroups()),
+      rowGroups: rotateRowsLayoutForWeek(mode.rowGroups || makeEmptyRowGroups(), rc),
       groupOrder: null,
       currentArrangement: (mode.currentArrangement + 1) % 200,
       locationInfo: nextLocationInfo
@@ -1726,7 +1819,7 @@ const rotateSingleClassMode = (mode: ClassConfig[TimeMode], rotateDate: boolean)
 
   return {
     ...mode,
-    arcGroups: rotateArcLayoutForWeek(mode.arcGroups || makeEmptyArcGroups()),
+    arcGroups: rotateArcLayoutForWeek(mode.arcGroups || makeEmptyArcGroups(), rc),
     groupOrder: null,
     currentArrangement: (mode.currentArrangement + 1) % 200,
     locationInfo: nextLocationInfo
@@ -1739,14 +1832,15 @@ const generateSeating = (): void => {
     return;
   }
 
+  const rc = state.rotationConfig;
   if (state.currentLayout === 'circular') {
     const activeCount = getCircularGroupCountFromGroups(state.groups);
-    state.groups = rotateCircularLayoutForWeek(state.groups);
-    state.currentGroupOrder = rotateCircularGroupOrderForWeek(state.currentGroupOrder, activeCount);
+    state.groups = rotateCircularLayoutForWeek(state.groups, rc);
+    state.currentGroupOrder = rotateCircularGroupOrderForWeek(state.currentGroupOrder, activeCount, rc);
   } else if (state.currentLayout === 'rows') {
-    state.rowGroups = rotateRowsLayoutForWeek(state.rowGroups);
+    state.rowGroups = rotateRowsLayoutForWeek(state.rowGroups, rc);
   } else {
-    state.arcGroups = rotateArcLayoutForWeek(state.arcGroups);
+    state.arcGroups = rotateArcLayoutForWeek(state.arcGroups, rc);
   }
 
   state.currentArrangement = (state.currentArrangement + 1) % 200;
@@ -1993,6 +2087,8 @@ const toggleLayout = (): void => {
     state.rowGroups = makeEmptyRowGroups();
   }
 
+  state.rotationConfig = defaultRotationConfig(nextLayout);
+  syncRotationSelectors();
   setLayoutClass(nextLayout);
   refresh();
   saveCurrentClassMode();
@@ -3640,6 +3736,28 @@ const bindHomeEvents = (): void => {
   });
 };
 
+const syncRotationSelectors = (): void => {
+  const groupSel = byId<HTMLSelectElement>('groupRotationSelect');
+  const internalSel = byId<HTMLSelectElement>('internalRotationSelect');
+  groupSel.value = state.rotationConfig.groupRotation;
+  internalSel.value = state.rotationConfig.internalRotation;
+
+  const snakeOpt = groupSel.querySelector<HTMLOptionElement>('option[value="snake"]');
+  if (snakeOpt) {
+    snakeOpt.style.display = state.currentLayout === 'rows' ? '' : 'none';
+    if (state.currentLayout !== 'rows' && state.rotationConfig.groupRotation === 'snake') {
+      state.rotationConfig.groupRotation = 'clockwise';
+      groupSel.value = 'clockwise';
+    }
+  }
+
+  const configPanel = byId<HTMLDivElement>('rotationConfig');
+  const groupRow = configPanel.querySelector('.rotation-config-row') as HTMLElement | null;
+  if (groupRow) {
+    groupRow.style.display = state.currentLayout === 'arc' ? 'none' : '';
+  }
+};
+
 const bindCoreEvents = (): void => {
   const editorView = byId<HTMLDivElement>('editorView');
   const editorToolsToggle = byId<HTMLButtonElement>('editorToolsToggle');
@@ -3652,6 +3770,15 @@ const bindCoreEvents = (): void => {
   applyEditorToolsState(readStorageValue(storageKeys.editorToolsCollapsed) === '1');
   editorToolsToggle.addEventListener('click', () => {
     applyEditorToolsState(!editorView.classList.contains('editor-tools-collapsed'));
+  });
+
+  byId<HTMLSelectElement>('groupRotationSelect').addEventListener('change', (e) => {
+    state.rotationConfig.groupRotation = (e.target as HTMLSelectElement).value as any;
+    saveCurrentClassMode();
+  });
+  byId<HTMLSelectElement>('internalRotationSelect').addEventListener('change', (e) => {
+    state.rotationConfig.internalRotation = (e.target as HTMLSelectElement).value as any;
+    saveCurrentClassMode();
   });
 
   byId<HTMLInputElement>('date').addEventListener('change', syncDateField);
@@ -3970,15 +4097,11 @@ export const initApp = (): void => {
   maybeShowTodayReminderAlert();
 
   // When embedded, the outer container already provides back, home, and class
-  // switching. Hide Super Amber's own navigation to avoid duplicate controls.
+  // switching. Hide duplicate navigation but keep theme/time-toggle/rotation config.
   if (appMountOptions.embedded || window.self !== window.top) {
     const backHomeBtn = queryOne<HTMLElement>('.back-home');
     if (backHomeBtn) {
       backHomeBtn.style.display = 'none';
-    }
-    const classSelector = queryOne<HTMLElement>('.class-selector');
-    if (classSelector) {
-      classSelector.style.display = 'none';
     }
     const editorTopbar = queryOne<HTMLElement>('.editor-topbar');
     if (editorTopbar) {
@@ -3987,6 +4110,11 @@ export const initApp = (): void => {
     const floatingContext = byId<HTMLElement>('editorFloatingContext');
     if (floatingContext) {
       floatingContext.style.display = 'none';
+    }
+    // Hide only the class-select and its label (duplicate of outer frame), keep theme/time/rename/delete
+    const classMain = queryOne<HTMLElement>('.class-selector-main');
+    if (classMain) {
+      classMain.style.display = 'none';
     }
   }
 };

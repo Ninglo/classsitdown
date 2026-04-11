@@ -43,9 +43,9 @@ export default function ClassHub({ classInfo, classes, onNavigate, onBack, onSwi
 
   return (
     <div className="hub-wrap fade-in">
-      <button className="hub-home-rail" onClick={onBack}>
-        <span className="hub-home-rail-icon">←</span>
-        <span className="hub-home-rail-text">返回主页</span>
+      <button className="tool-home-rail" onClick={onBack}>
+        <span className="tool-home-rail-icon">←</span>
+        <span>返回主页</span>
       </button>
 
       <div className="hub-topbar">

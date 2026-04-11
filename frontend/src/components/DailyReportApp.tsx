@@ -165,16 +165,15 @@ export default function DailyReportApp({ classInfo, classes, onBack, onBackToHom
         </button>
       )}
       <div className="dr-topbar">
-        <button className="back-btn" onClick={onBack}>← 返回</button>
-        <span className="dr-title">
-          📗{' '}
-          {classes && classes.length > 1 && onSwitchClass ? (
-            <select className="tool-class-switch" value={classInfo.name} onChange={(e) => onSwitchClass(e.target.value)}>
-              {classes.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
-          ) : classInfo.name}
-          {' '}· 班级日报
-        </span>
+        <button className="tool-back-btn" onClick={onBack}>← 返回</button>
+        {classes && classes.length > 1 && onSwitchClass ? (
+          <select className="tool-class-switch" value={classInfo.name} onChange={(e) => onSwitchClass(e.target.value)}>
+            {classes.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+          </select>
+        ) : (
+          <span className="tool-class-switch" style={{ cursor: 'default' }}>{classInfo.name}</span>
+        )}
+        <span className="tool-topbar-label">· 班级日报</span>
       </div>
 
       <div className="dr-body">

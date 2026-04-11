@@ -1,6 +1,14 @@
 export type TimeMode = 'weekday' | 'weekend';
 export type LayoutType = 'circular' | 'rows' | 'arc';
 export type ThemeName = 'paper' | 'classic' | 'mint' | 'rose' | 'apricot' | 'golden' | 'plum';
+export type GroupRotation = 'clockwise' | 'counterclockwise' | 'snake';
+export type InternalRotation = 'none' | 'right1' | 'right2' | 'left1' | 'left2';
+
+export interface RotationConfig {
+  groupRotation: GroupRotation;
+  internalRotation: InternalRotation;
+}
+
 export type OcrEngineMode = 'hybrid' | 'tencent' | 'local';
 export type TencentOcrAction = 'Auto' | 'ExtractDocMulti' | 'GeneralAccurateOCR' | 'GeneralBasicOCR';
 
@@ -37,6 +45,7 @@ export interface TimeModeData {
   arcGroups: ArcGroups | null;
   currentArrangement: number;
   locationInfo: LocationInfo;
+  rotationConfig?: RotationConfig | null;
 }
 
 export interface ClassSnapshot {
@@ -104,4 +113,5 @@ export interface AppState {
   arcGroups: ArcGroups;
   classData: ClassData;
   userProfile: UserProfile;
+  rotationConfig: RotationConfig;
 }
