@@ -27,7 +27,7 @@ const FEATURES: FeatureItem[] = [
   { icon: '🧾', title: '班级名单检查', desc: '把学号、中文名、英文名一次性整理好，后面会更省事', target: 'roster' },
 ];
 
-export default function ClassHub({ classInfo, onNavigate, onBack }: Props) {
+export default function ClassHub({ classInfo, classes, onNavigate, onBack, onSwitchClass }: Props) {
   const week = getCurrentWeek();
   const displayName = classInfo.id === 'manual'
     ? (classInfo.name === '手动输入' ? '手动模式' : classInfo.name)
@@ -49,9 +49,20 @@ export default function ClassHub({ classInfo, onNavigate, onBack }: Props) {
       </button>
 
       <div className="hub-topbar">
-        <button className="back-btn" onClick={onBack}>← 返回主页</button>
         <div className="hub-class-tag">
-          <span className="hub-class-code">{displayName}</span>
+          {classes && classes.length > 1 && onSwitchClass ? (
+            <select
+              className="tool-class-switch"
+              value={classInfo.name}
+              onChange={(e) => onSwitchClass(e.target.value)}
+            >
+              {classes.map((c) => (
+                <option key={c.id} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="hub-class-code">{displayName}</span>
+          )}
           <span className="hub-week">W{week}</span>
         </div>
       </div>

@@ -3969,13 +3969,24 @@ export const initApp = (): void => {
   renderReminderSummary();
   maybeShowTodayReminderAlert();
 
-  // When embedded in an iframe inside a legacy host shell, the outer container
-  // already provides a back button. Hide Super Amber's own "返回主页" to avoid
-  // two competing back actions confusing the teacher.
+  // When embedded, the outer container already provides back, home, and class
+  // switching. Hide Super Amber's own navigation to avoid duplicate controls.
   if (appMountOptions.embedded || window.self !== window.top) {
     const backHomeBtn = queryOne<HTMLElement>('.back-home');
     if (backHomeBtn) {
       backHomeBtn.style.display = 'none';
+    }
+    const classSelector = queryOne<HTMLElement>('.class-selector');
+    if (classSelector) {
+      classSelector.style.display = 'none';
+    }
+    const editorTopbar = queryOne<HTMLElement>('.editor-topbar');
+    if (editorTopbar) {
+      editorTopbar.style.display = 'none';
+    }
+    const floatingContext = byId<HTMLElement>('editorFloatingContext');
+    if (floatingContext) {
+      floatingContext.style.display = 'none';
     }
   }
 };

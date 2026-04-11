@@ -163,7 +163,7 @@ async function parseRosterFile(file: File): Promise<ParsedRosterRow[]> {
   return parseRosterText(text);
 }
 
-export default function ClassRosterApp({ classInfo, knownClasses, onBack, onSessionExpired }: Props) {
+export default function ClassRosterApp({ classInfo, knownClasses, onBack, onBackToHome, onSessionExpired }: Props) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [batchInput, setBatchInput] = useState('');
   const [batchRows, setBatchRows] = useState<ParsedRosterRow[]>([]);
@@ -324,6 +324,12 @@ export default function ClassRosterApp({ classInfo, knownClasses, onBack, onSess
 
   return (
     <div className="roster-shell fade-in">
+      {onBackToHome && (
+        <button className="tool-home-rail" onClick={onBackToHome}>
+          <span className="tool-home-rail-icon">←</span>
+          <span>返回主页</span>
+        </button>
+      )}
       <div className="roster-topbar">
         <button className="back-btn" onClick={onBack}>← 返回</button>
         <div className="roster-title">

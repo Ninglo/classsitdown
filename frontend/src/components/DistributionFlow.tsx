@@ -12,7 +12,10 @@ import './DistributionFlow.css';
 
 interface Props {
   classInfo: ClassInfo;
+  classes?: ClassInfo[];
   onBack: () => void;
+  onBackToHome?: () => void;
+  onSwitchClass?: (name: string) => void;
   onSessionExpired?: () => void;
 }
 
@@ -248,7 +251,7 @@ function buildQuickTemplateRows(rewards: QuickDraftReward[]): {
   return { students, mpMap };
 }
 
-export default function DistributionFlow({ classInfo, onBack, onSessionExpired }: Props) {
+export default function DistributionFlow({ classInfo, classes, onBack, onBackToHome, onSwitchClass, onSessionExpired }: Props) {
   const isManual = classInfo.id === 'manual';
   const [manualCode, setManualCode] = useState('');
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
@@ -344,6 +347,12 @@ export default function DistributionFlow({ classInfo, onBack, onSessionExpired }
 
   return (
     <div className="flow-wrap fade-in">
+      {onBackToHome && (
+        <button className="tool-home-rail" onClick={onBackToHome}>
+          <span className="tool-home-rail-icon">←</span>
+          <span>返回主页</span>
+        </button>
+      )}
       <div className="flow-topbar">
         <button className="back-btn" onClick={onBack}>← 返回</button>
         <div className="flow-class-tag">
@@ -355,6 +364,10 @@ export default function DistributionFlow({ classInfo, onBack, onSessionExpired }
               value={manualCode}
               onChange={(e) => setManualCode(e.target.value)}
             />
+          ) : classes && classes.length > 1 && onSwitchClass ? (
+            <select className="tool-class-switch" value={classInfo.name} onChange={(e) => onSwitchClass(e.target.value)}>
+              {classes.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
           ) : (
             <span className="flow-class-code">{classInfo.name}</span>
           )}

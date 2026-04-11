@@ -89,10 +89,13 @@ export default function NewestSeatingFrame({ classCode, classes, onBack, onBackT
           background: 'rgba(255,255,255,0.95)',
           flexShrink: 0,
         }}>
-          <div className="tool-nav-bar">
-            <button className="back-btn" onClick={onBack}>← 返回</button>
-            {onBackToHome && <button className="tool-home-btn" onClick={onBackToHome}>🏠 主页</button>}
-          </div>
+          {onBackToHome && (
+            <button className="tool-home-rail" style={{ position: 'static', padding: '6px 12px', fontSize: 12 }} onClick={onBackToHome}>
+              <span className="tool-home-rail-icon" style={{ width: 16, height: 16 }}>←</span>
+              <span>主页</span>
+            </button>
+          )}
+          <button className="back-btn" onClick={onBack}>← 返回</button>
           <span style={{ fontSize: 14, color: '#6a746f' }}>
             {classes && classes.length > 1 && onSwitchClass ? (
               <select className="tool-class-switch" value={classCode} onChange={(e) => onSwitchClass(e.target.value)}>

@@ -67,7 +67,7 @@ function triggerDownload(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function DailyReportApp({ classInfo, onBack }: Props) {
+export default function DailyReportApp({ classInfo, classes, onBack, onBackToHome, onSwitchClass }: Props) {
   const [reportMode, setReportMode] = useState<ReportMode>('standard');
   const [className, setClassName] = useState('');
   const [studentFile, setStudentFile] = useState<UploadedFileState>({ file: null, name: '' });
@@ -158,9 +158,23 @@ export default function DailyReportApp({ classInfo, onBack }: Props) {
 
   return (
     <div className="dr-wrap fade-in">
+      {onBackToHome && (
+        <button className="tool-home-rail" onClick={onBackToHome}>
+          <span className="tool-home-rail-icon">←</span>
+          <span>返回主页</span>
+        </button>
+      )}
       <div className="dr-topbar">
         <button className="back-btn" onClick={onBack}>← 返回</button>
-        <span className="dr-title">📗 {classInfo.name} · 班级日报</span>
+        <span className="dr-title">
+          📗{' '}
+          {classes && classes.length > 1 && onSwitchClass ? (
+            <select className="tool-class-switch" value={classInfo.name} onChange={(e) => onSwitchClass(e.target.value)}>
+              {classes.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          ) : classInfo.name}
+          {' '}· 班级日报
+        </span>
       </div>
 
       <div className="dr-body">

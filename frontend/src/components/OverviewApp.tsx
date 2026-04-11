@@ -37,7 +37,10 @@ import './OverviewApp.css';
 
 interface Props {
   classInfo: ClassInfo;
+  classes?: ClassInfo[];
   onBack: () => void;
+  onBackToHome?: () => void;
+  onSwitchClass?: (name: string) => void;
 }
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -480,7 +483,7 @@ function shouldShowCustomBlock(block: CustomBlock): boolean {
   return block.media.length > 0 || Boolean(block.title.trim() && block.title.trim() !== '补充内容');
 }
 
-export default function OverviewApp({ classInfo, onBack }: Props) {
+export default function OverviewApp({ classInfo, classes, onBack, onBackToHome, onSwitchClass }: Props) {
   function getPaperMediaWidth(displayWidth?: number): string {
     const width = Math.max(360, Math.min(820, Math.round((displayWidth ?? 160) * 5)));
     return `min(100%, ${width}px)`;
@@ -824,11 +827,23 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
 
   return (
     <div className="ov-shell fade-in">
+      {onBackToHome && (
+        <button className="tool-home-rail" onClick={onBackToHome}>
+          <span className="tool-home-rail-icon">←</span>
+          <span>返回主页</span>
+        </button>
+      )}
       <div className="ov-toolbar">
-        <button className="back-btn" onClick={onBack}>← 返回</button>
-        <div className="ov-toolbar-center">
-          <strong>{classCode}</strong>
-          <span>{formatDateShort(weekRange.start)} - {formatDateShort(weekRange.end)}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button className="back-btn" onClick={onBack}>← 返回</button>
+          {classes && classes.length > 1 && onSwitchClass ? (
+            <select className="tool-class-switch" value={classCode} onChange={(e) => onSwitchClass(e.target.value)}>
+              {classes.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          ) : (
+            <strong style={{ fontSize: 16, color: 'var(--gray-900)' }}>{classCode}</strong>
+          )}
+          <span style={{ fontSize: 12, color: 'var(--gray-500)' }}>{formatDateShort(weekRange.start)} - {formatDateShort(weekRange.end)}</span>
         </div>
         <div className="ov-toolbar-actions">
           <select
