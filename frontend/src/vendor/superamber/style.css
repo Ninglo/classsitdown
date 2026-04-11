@@ -832,7 +832,7 @@ button:disabled {
 .time-display,
 .location-display {
   flex: 1;
-  min-width: 300px;
+  min-width: 0;
   font-size: 17px;
   padding: 15px;
   border-radius: 12px;
@@ -871,7 +871,7 @@ button:disabled {
 }
 
 .info-input.wider {
-  width: 100px;
+  width: 120px;
 }
 
 .weekday-select,
@@ -1290,30 +1290,7 @@ button:disabled {
   max-width: 520px;
 }
 
-.row:nth-child(1) .group-left {
-  background: var(--group-1);
-}
-
-.row:nth-child(1) .group-right {
-  background: var(--group-2);
-}
-
-.row:nth-child(2) .group-left {
-  background: var(--group-3);
-}
-
-.row:nth-child(2) .group-right {
-  background: var(--group-4);
-}
-
-.row:nth-child(3) .group-left,
-.row:nth-child(3) .group-center {
-  background: var(--group-5);
-}
-
-.row:nth-child(3) .group-right {
-  background: var(--group-6);
-}
+/* Row group colors now applied via dynamic group-N classes (same as circular) */
 
 .seats-row {
   display: flex;
@@ -1455,6 +1432,8 @@ button:disabled {
   border-radius: 10px;
   font-size: 13px;
   line-height: 1.6;
+  max-height: 80px;
+  overflow-y: auto;
 }
 
 .roster-diff-ok {
@@ -1560,6 +1539,22 @@ button:disabled {
 .delete-btn {
   background: var(--danger-soft);
   color: var(--danger-text);
+}
+
+/* tools toggle */
+.tools-toggle-btn {
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+  min-width: 80px;
+}
+
+.sa-tools-hidden {
+  display: none !important;
+}
+
+.sa-tools-visible {
+  /* restore original display via removing sa-tools-hidden */
 }
 
 .overlay {

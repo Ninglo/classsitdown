@@ -28,6 +28,7 @@ import {
   rotateArcLayoutForWeek,
   rotateCircularLayoutForWeek,
   rotateRowsLayoutForWeek,
+  rotateRowsGroupOrderForWeek,
   defaultRotationConfig
 } from './layouts';
 import { getDefaultOCREndpoint, loadOCRSettings, saveOCRSettings } from './ocrSettings';
@@ -134,6 +135,7 @@ interface ManualTuneDraft {
 
 interface AmberClassProfileStudent {
   chineseName?: string;
+  englishName?: string;
 }
 
 interface AmberClassProfile {
@@ -300,9 +302,15 @@ const loadKnownRosterForClass = (className: string): string[] => {
       String(profile?.classCode || '').trim().toUpperCase() === className.trim().toUpperCase()
     );
 
+    // Use englishName for comparison (seating chart stores English names)
+    // Fall back to chineseName if no englishName
     return normalizeStudentList(
       Array.isArray(matched?.students)
-        ? matched.students.map((student) => String(student?.chineseName || '').trim()).filter(Boolean)
+        ? matched.students.map((student) => {
+            const en = String(student?.englishName || '').trim();
+            const ch = String(student?.chineseName || '').trim();
+            return en || ch;
+          }).filter(Boolean)
         : []
     );
   } catch {
@@ -1239,7 +1247,7 @@ const setLocationInfo = (info: Partial<LocationInfo> | undefined): void => {
 const captureCurrentModeData = (): ClassConfig[TimeMode] => ({
   layout: state.currentLayout,
   groups: state.currentLayout === 'circular' ? JSON.parse(JSON.stringify(state.groups)) : null,
-  groupOrder: state.currentLayout === 'circular' ? [...state.currentGroupOrder] : null,
+  groupOrder: (state.currentLayout === 'circular' || state.currentLayout === 'rows') ? [...state.currentGroupOrder] : null,
   rowGroups: state.currentLayout === 'rows' ? JSON.parse(JSON.stringify(state.rowGroups)) : null,
   arcGroups: state.currentLayout === 'arc' ? JSON.parse(JSON.stringify(state.arcGroups)) : null,
   currentArrangement: state.currentArrangement,
@@ -1337,7 +1345,7 @@ const loadClass = (): void => {
   } else if (state.currentLayout === 'rows') {
     state.rowGroups = JSON.parse(JSON.stringify(data.rowGroups || makeEmptyRowGroups()));
     state.groups = makeEmptyCircularGroups();
-    state.currentGroupOrder = [1, 2, 3, 4, 5, 6];
+    state.currentGroupOrder = [...(data.groupOrder || [1, 2, 3, 4, 5, 6])];
     state.arcGroups = makeEmptyArcGroups();
   } else {
     state.arcGroups = JSON.parse(JSON.stringify(data.arcGroups || makeEmptyArcGroups()));
@@ -1808,10 +1816,11 @@ const rotateSingleClassMode = (mode: ClassConfig[TimeMode], rotateDate: boolean)
   }
 
   if (mode.layout === 'rows') {
+    const rowActiveCount = getRowsGroupCountFromGroups(mode.rowGroups || makeEmptyRowGroups());
     return {
       ...mode,
       rowGroups: rotateRowsLayoutForWeek(mode.rowGroups || makeEmptyRowGroups(), rc),
-      groupOrder: null,
+      groupOrder: rotateRowsGroupOrderForWeek(mode.groupOrder || [1, 2, 3, 4, 5, 6], rowActiveCount, rc),
       currentArrangement: (mode.currentArrangement + 1) % 200,
       locationInfo: nextLocationInfo
     };
@@ -1838,7 +1847,9 @@ const generateSeating = (): void => {
     state.groups = rotateCircularLayoutForWeek(state.groups, rc);
     state.currentGroupOrder = rotateCircularGroupOrderForWeek(state.currentGroupOrder, activeCount, rc);
   } else if (state.currentLayout === 'rows') {
+    const rowActiveCount = getRowsGroupCountFromGroups(state.rowGroups);
     state.rowGroups = rotateRowsLayoutForWeek(state.rowGroups, rc);
+    state.currentGroupOrder = rotateRowsGroupOrderForWeek(state.currentGroupOrder, rowActiveCount, rc);
   } else {
     state.arcGroups = rotateArcLayoutForWeek(state.arcGroups, rc);
   }
@@ -3958,6 +3969,22 @@ const bindCoreEvents = (): void => {
   });
 };
 
+const toggleToolsPanel = (): void => {
+  const ids = ['rotationConfig', 'rightSection', 'saveBtn', 'controlsBar'];
+  const btn = byId<HTMLButtonElement>('toolsToggleBtn');
+  const isHidden = byId('rotationConfig').classList.contains('sa-tools-hidden');
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (isHidden) {
+      el.classList.remove('sa-tools-hidden');
+    } else {
+      el.classList.add('sa-tools-hidden');
+    }
+  }
+  btn.textContent = isHidden ? '隐藏工具' : '显示工具';
+};
+
 interface AppWindow extends Window {
   loadClass: () => void;
   toggleTime: (mode: TimeMode) => void;
@@ -4006,6 +4033,7 @@ interface AppWindow extends Window {
   hideCnfSyncDialog: () => void;
   cnfLoginAction: () => Promise<void>;
   cnfFetchAction: () => Promise<void>;
+  toggleToolsPanel: () => void;
 }
 
 const exposeToWindow = (): void => {
@@ -4057,6 +4085,7 @@ const exposeToWindow = (): void => {
   w.hideCnfSyncDialog = hideCnfSyncDialog;
   w.cnfLoginAction = cnfLoginAction;
   w.cnfFetchAction = cnfFetchAction;
+  w.toggleToolsPanel = toggleToolsPanel;
 };
 
 const loadProfile = (): void => {
