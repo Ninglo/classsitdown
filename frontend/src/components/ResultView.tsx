@@ -150,15 +150,17 @@ ${scheme2Text}
   }
 
   function handleDownloadExcel() {
-    const buf = generateOutputExcel(students, mpMap);
-    const blob = new Blob([buf], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `${classCode}_Week${week}_MP发放.xlsx`;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(link.href), 5000);
+    void (async () => {
+      const buf = await generateOutputExcel(students, mpMap);
+      const blob = new Blob([buf], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${classCode}_Week${week}_MP发放.xlsx`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 5000);
+    })();
   }
 
   async function handleSubmitToSystem() {
@@ -220,8 +222,6 @@ ${scheme2Text}
     { key: 'total_asc',  label: '总量 ↑' },
     { key: 'en_asc',  label: '英文名 A→Z' },
     { key: 'en_desc', label: '英文名 Z→A' },
-    { key: 'zh_asc',  label: '中文名 升序' },
-    { key: 'zh_desc', label: '中文名 降序' },
   ];
 
   return (
@@ -272,7 +272,6 @@ ${scheme2Text}
               <tr>
                 <th className="col-rank-h">#</th>
                 <th>英文名</th>
-                <th>中文名</th>
                 {showBasic && <th>基础落实</th>}
                 {showDaily && <th>每日开口</th>}
                 {showClass && <th>课堂参与</th>}
@@ -286,8 +285,7 @@ ${scheme2Text}
                   <td className="col-rank">
                     {medalMap.get(r.studentId) ?? ''}
                   </td>
-                  <td className="col-name-en">{r.englishName}</td>
-                  <td className="col-name-zh">{r.chineseName}</td>
+                  <td className="col-name-en">{r.englishName || r.chineseName}</td>
                   {showBasic && <td className={maxBasic !== null && r.基础落实 === maxBasic ? 'col-star' : ''}>{fmtStar(r.基础落实, maxBasic !== null && r.基础落实 === maxBasic)}</td>}
                   {showDaily && <td className={maxDaily !== null && r.每日开口 === maxDaily ? 'col-star' : ''}>{fmtStar(r.每日开口, maxDaily !== null && r.每日开口 === maxDaily)}</td>}
                   {showClass && <td className={maxClass !== null && r.课堂参与 === maxClass ? 'col-star' : ''}>{fmtStar(r.课堂参与, maxClass !== null && r.课堂参与 === maxClass)}</td>}

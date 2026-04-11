@@ -34,9 +34,63 @@ const MODULE_REQUIRED: Record<Module, boolean> = {
 
 const QUICK_ROSTER_KEY = 'amber_mp_quick_rosters_v1';
 type EntryMode = 'standard' | 'quick';
+type QuickInputMode = 'chinese' | 'english' | 'picker';
+type StudentSortKey = 'en_asc' | 'en_desc' | 'zh_asc' | 'zh_desc';
+
+interface QuickDraftReward extends StudentRecord {
+  amount: number;
+}
+
+interface QuickResolveIssue {
+  name: string;
+  matches: StudentRecord[];
+}
+
+const STUDENT_SORT_OPTIONS: Array<{ key: StudentSortKey; label: string }> = [
+  { key: 'en_asc', label: '英文名 A→Z' },
+  { key: 'en_desc', label: '英文名 Z→A' },
+];
 
 function normalizeStudentName(raw: string): string {
   return String(raw || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeStudentKey(raw: string): string {
+  return normalizeStudentName(raw).toLowerCase();
+}
+
+function compareStudentListItem(
+  a: Pick<StudentRecord, 'chineseName' | 'englishName'>,
+  b: Pick<StudentRecord, 'chineseName' | 'englishName'>,
+  sortKey: StudentSortKey,
+): number {
+  const englishA = normalizeStudentName(a.englishName || '');
+  const englishB = normalizeStudentName(b.englishName || '');
+  const chineseA = normalizeStudentName(a.chineseName || '');
+  const chineseB = normalizeStudentName(b.chineseName || '');
+
+  switch (sortKey) {
+    case 'en_desc':
+      return (englishB || chineseB).localeCompare(englishA || chineseA, 'en', { sensitivity: 'base' })
+        || chineseA.localeCompare(chineseB, 'zh-Hans-CN');
+    case 'zh_asc':
+      return chineseA.localeCompare(chineseB, 'zh-Hans-CN')
+        || (englishA || chineseA).localeCompare(englishB || chineseB, 'en', { sensitivity: 'base' });
+    case 'zh_desc':
+      return chineseB.localeCompare(chineseA, 'zh-Hans-CN')
+        || (englishA || chineseA).localeCompare(englishB || chineseB, 'en', { sensitivity: 'base' });
+    case 'en_asc':
+    default:
+      return (englishA || chineseA).localeCompare(englishB || chineseB, 'en', { sensitivity: 'base' })
+        || chineseA.localeCompare(chineseB, 'zh-Hans-CN');
+  }
+}
+
+function sortStudentList<T extends Pick<StudentRecord, 'chineseName' | 'englishName'>>(
+  items: T[],
+  sortKey: StudentSortKey,
+): T[] {
+  return [...items].sort((a, b) => compareStudentListItem(a, b, sortKey));
 }
 
 function saveQuickRoster(classCode: string, students: StudentData[]) {
@@ -78,54 +132,120 @@ function loadQuickRoster(classCode: string): StudentRecord[] {
   }
 }
 
-function parseQuickRewardText(raw: string): Array<{ chineseName: string; amount: number }> {
+function parseQuickLineItems(
+  raw: string,
+  splitter: RegExp,
+): Array<{ name: string; amount: number }> {
   return raw
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((line) => {
+    .flatMap((line) => {
       const match = line.match(/^(.+?)[\s,，:：\-]+(-?\d+(?:\.\d+)?)$/);
-      if (!match) return null;
-      return {
-        chineseName: normalizeStudentName(match[1]),
-        amount: Number(match[2]),
-      };
+      if (!match) return [];
+      const amount = Number(match[2]);
+      return match[1]
+        .split(splitter)
+        .map((item) => normalizeStudentName(item))
+        .filter(Boolean)
+        .map((name) => ({ name, amount }));
     })
-    .filter((item): item is { chineseName: string; amount: number } => Boolean(item && item.chineseName));
+    .filter((item) => Boolean(item.name));
 }
 
-function buildQuickTemplateRows(roster: StudentRecord[], rewards: Array<{ chineseName: string; amount: number }>): {
-  students: StudentData[];
-  mpMap: Map<string, number>;
-  missingNames: string[];
-} {
-  const rosterMap = new Map(
-    roster.map((student) => [normalizeStudentName(student.chineseName), student]),
-  );
-  const students: StudentData[] = [];
-  const mpMap = new Map<string, number>();
-  const missingNames: string[] = [];
+function parseQuickChineseRewardText(raw: string): Array<{ name: string; amount: number }> {
+  return parseQuickLineItems(raw, /[、,，/／]+|\s+/);
+}
 
-  for (const reward of rewards) {
-    const hit = rosterMap.get(reward.chineseName);
-    if (!hit) {
-      missingNames.push(reward.chineseName);
+function parseQuickEnglishRewardText(raw: string): Array<{ name: string; amount: number }> {
+  return parseQuickLineItems(raw, /[、,，;；/／]+/);
+}
+
+function mergeQuickDraftRewards(existing: QuickDraftReward[], incoming: QuickDraftReward[]): QuickDraftReward[] {
+  const merged = new Map<string, QuickDraftReward>();
+  for (const reward of [...existing, ...incoming]) {
+    const current = merged.get(reward.studentId);
+    if (!current) {
+      merged.set(reward.studentId, { ...reward });
       continue;
     }
-    students.push({
-      studentId: hit.studentId,
-      chineseName: hit.chineseName,
-      englishName: hit.englishName || '',
-      classCode: hit.classCode,
-      resources: [],
-      dailyCheckIns: 0,
-      classParticipation: 0,
-      bonusItems: [],
-    });
-    mpMap.set(hit.studentId, reward.amount);
+    merged.set(reward.studentId, { ...current, amount: Number((current.amount + reward.amount).toFixed(2)) });
   }
 
-  return { students, mpMap, missingNames };
+  return [...merged.values()].sort((a, b) => a.chineseName.localeCompare(b.chineseName, 'zh-Hans-CN'));
+}
+
+function resolveQuickRewards(
+  roster: StudentRecord[],
+  rewards: Array<{ name: string; amount: number }>,
+  mode: Exclude<QuickInputMode, 'picker'>,
+): {
+  resolved: QuickDraftReward[];
+  missingNames: string[];
+  ambiguousNames: QuickResolveIssue[];
+} {
+  const byChinese = new Map<string, StudentRecord[]>();
+  const byEnglish = new Map<string, StudentRecord[]>();
+
+  for (const student of roster) {
+    const chineseKey = normalizeStudentKey(student.chineseName);
+    if (chineseKey) {
+      if (!byChinese.has(chineseKey)) byChinese.set(chineseKey, []);
+      byChinese.get(chineseKey)?.push(student);
+    }
+
+    const englishKey = normalizeStudentKey(student.englishName);
+    if (englishKey) {
+      if (!byEnglish.has(englishKey)) byEnglish.set(englishKey, []);
+      byEnglish.get(englishKey)?.push(student);
+    }
+  }
+
+  const resolved: QuickDraftReward[] = [];
+  const missingNames: string[] = [];
+  const ambiguousNames: QuickResolveIssue[] = [];
+
+  for (const reward of rewards) {
+    const key = normalizeStudentKey(reward.name);
+    const matches = (mode === 'english' ? byEnglish : byChinese).get(key) || [];
+    if (matches.length === 0) {
+      missingNames.push(reward.name);
+      continue;
+    }
+    if (mode === 'english' && matches.length > 1) {
+      ambiguousNames.push({ name: reward.name, matches });
+      continue;
+    }
+
+    const hit = matches[0];
+    resolved.push({
+      studentId: hit.studentId,
+      chineseName: hit.chineseName,
+      englishName: hit.englishName,
+      classCode: hit.classCode,
+      amount: reward.amount,
+    });
+  }
+
+  return { resolved, missingNames, ambiguousNames };
+}
+
+function buildQuickTemplateRows(rewards: QuickDraftReward[]): {
+  students: StudentData[];
+  mpMap: Map<string, number>;
+} {
+  const students: StudentData[] = rewards.map((reward) => ({
+    studentId: reward.studentId,
+    chineseName: reward.chineseName,
+    englishName: reward.englishName || '',
+    classCode: reward.classCode,
+    resources: [],
+    dailyCheckIns: 0,
+    classParticipation: 0,
+    bonusItems: [],
+  }));
+  const mpMap = new Map(rewards.map((reward) => [reward.studentId, reward.amount]));
+  return { students, mpMap };
 }
 
 export default function DistributionFlow({ classInfo, onBack, onSessionExpired }: Props) {
@@ -146,6 +266,7 @@ export default function DistributionFlow({ classInfo, onBack, onSessionExpired }
   const [mpResults, setMpResults] = useState<MPBreakdown[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [studentSortKey, setStudentSortKey] = useState<StudentSortKey>('en_asc');
   const week = getCurrentWeek();
   const displayCode = isManual ? (manualCode || '手动输入') : classInfo.name;
 
@@ -277,10 +398,12 @@ export default function DistributionFlow({ classInfo, onBack, onSessionExpired }
         />
       )}
       {step === 2 && entryMode === 'quick' && (
-        <StepQuick
-          classCode={displayCode}
-          onBack={() => setStep(1)}
-        />
+          <StepQuick
+            classCode={displayCode}
+            studentSortKey={studentSortKey}
+            onStudentSortChange={setStudentSortKey}
+            onBack={() => setStep(1)}
+          />
       )}
       {step === 3 && (
         <StepPreview
@@ -291,6 +414,8 @@ export default function DistributionFlow({ classInfo, onBack, onSessionExpired }
           dailyRate={dailyRate}
           defaultParticipation={defaultParticipation}
           bonusItems={bonusItems}
+          studentSortKey={studentSortKey}
+          onStudentSortChange={setStudentSortKey}
           modules={selectedModules}
           onSchemeChange={(id, data) => { setScheme(id); setCustomSchemeData(data); }}
           onDailyRateChange={setDailyRate}
@@ -470,33 +595,124 @@ function StepUpload({
 
 function StepQuick({
   classCode,
+  studentSortKey,
+  onStudentSortChange,
   onBack,
 }: {
   classCode: string;
+  studentSortKey: StudentSortKey;
+  onStudentSortChange: (value: StudentSortKey) => void;
   onBack: () => void;
 }) {
   const rememberedRoster = loadQuickRoster(classCode);
+  const sortedRoster = sortStudentList(rememberedRoster, studentSortKey);
+  const [inputMode, setInputMode] = useState<QuickInputMode>('chinese');
   const [quickInput, setQuickInput] = useState('');
   const [quickMessage, setQuickMessage] = useState('');
+  const [draftRewards, setDraftRewards] = useState<QuickDraftReward[]>([]);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+  const [pickerAmount, setPickerAmount] = useState('');
 
-  function downloadQuickTemplate() {
+  function togglePickerStudent(studentId: string) {
+    setSelectedStudentIds((prev) => {
+      const next = new Set(prev);
+      next.has(studentId) ? next.delete(studentId) : next.add(studentId);
+      return next;
+    });
+  }
+
+  function appendParsedRewards(mode: Exclude<QuickInputMode, 'picker'>) {
     if (!rememberedRoster.length) {
       setQuickMessage('这个班目前还没有记住学号名单。先完整上传一次基础落实文件，后面这里就能反复直接生成。');
       return;
     }
-    const rewards = parseQuickRewardText(quickInput);
-    if (!rewards.length) {
-      setQuickMessage('先粘贴“中文名 + 数量”，一行一个，例如：李晓彤 0.5');
+
+    const parsed = mode === 'english'
+      ? parseQuickEnglishRewardText(quickInput)
+      : parseQuickChineseRewardText(quickInput);
+    if (!parsed.length) {
+      setQuickMessage(
+        mode === 'english'
+          ? '请输入“英文名 + 数量”，一行一个；多人请用逗号或顿号隔开，再写数量。'
+          : '请输入“中文名 + 数量”；多人可同一行输入，例如：李晓彤 周子然 0.5',
+      );
       return;
     }
 
-    const { students, mpMap, missingNames } = buildQuickTemplateRows(rememberedRoster, rewards);
-    if (!students.length) {
-      setQuickMessage('没有匹配到可用学生，请检查中文名是否和系统里一致。');
+    const { resolved, missingNames, ambiguousNames } = resolveQuickRewards(rememberedRoster, parsed, mode);
+    if (!resolved.length) {
+      const issues: string[] = [];
+      if (missingNames.length) issues.push(`未匹配：${missingNames.join('、')}`);
+      if (ambiguousNames.length) {
+        issues.push(`英文重名待人工校验：${ambiguousNames.map((item) => item.name).join('、')}`);
+      }
+      setQuickMessage(issues.join('；') || '没有匹配到可用学生。');
       return;
     }
 
-    const buffer = generateOutputExcel(students, mpMap);
+    setDraftRewards((prev) => mergeQuickDraftRewards(prev, resolved));
+    setQuickInput('');
+
+    const messages = [`已加入 ${resolved.length} 人`];
+    if (missingNames.length) messages.push(`未匹配：${missingNames.join('、')}`);
+    if (ambiguousNames.length) {
+      messages.push(
+        `英文重名待人工校验：${ambiguousNames
+          .map((item) => `${item.name}（${item.matches.map((student) => student.chineseName).join(' / ')}）`)
+          .join('；')}`,
+      );
+    }
+    setQuickMessage(messages.join('；'));
+  }
+
+  function appendPickerRewards() {
+    if (!rememberedRoster.length) {
+      setQuickMessage('这个班目前还没有记住学号名单。先完整上传一次基础落实文件，后面这里就能反复直接生成。');
+      return;
+    }
+    const amount = Number(pickerAmount);
+    if (!(amount > 0) || selectedStudentIds.size === 0) {
+      setQuickMessage('先勾选学生，再填写要加的数量。');
+      return;
+    }
+
+    const additions = rememberedRoster
+      .filter((student) => selectedStudentIds.has(student.studentId))
+      .map((student) => ({
+        studentId: student.studentId,
+        chineseName: student.chineseName,
+        englishName: student.englishName,
+        classCode: student.classCode,
+        amount,
+      }));
+
+    setDraftRewards((prev) => mergeQuickDraftRewards(prev, additions));
+    setSelectedStudentIds(new Set());
+    setPickerAmount('');
+    setQuickMessage(`已批量加入 ${additions.length} 人，每人 ${amount} MP。`);
+  }
+
+  function removeDraftReward(studentId: string) {
+    setDraftRewards((prev) => prev.filter((item) => item.studentId !== studentId));
+  }
+
+  function clearDraftRewards() {
+    setDraftRewards([]);
+    setQuickMessage('已清空待发名单。');
+  }
+
+  async function downloadQuickTemplate() {
+    if (!rememberedRoster.length) {
+      setQuickMessage('这个班目前还没有记住学号名单。先完整上传一次基础落实文件，后面这里就能反复直接生成。');
+      return;
+    }
+    if (!draftRewards.length) {
+      setQuickMessage('先把待发学生加入下面的列表，再生成标准模板。');
+      return;
+    }
+
+    const { students, mpMap } = buildQuickTemplateRows(draftRewards);
+    const buffer = await generateOutputExcel(students, mpMap);
     const blob = new Blob([buffer], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
@@ -506,11 +722,7 @@ function StepQuick({
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 5000);
 
-    setQuickMessage(
-      missingNames.length
-        ? `已生成模板，未匹配：${missingNames.join('、')}`
-        : `已生成 ${students.length} 人的标准模板。`,
-    );
+    setQuickMessage(`已生成 ${students.length} 人的标准模板。`);
   }
 
   return (
@@ -521,20 +733,145 @@ function StepQuick({
       <div className="quick-template-box">
         <div className="quick-template-head">
           <div>
-            <strong>按中文名直接生成</strong>
-            <p>如果这个班已经记住过学号和名单，直接粘贴“中文名 + 数量”就能出标准 Excel。</p>
+            <strong>快捷发放</strong>
+            <p>这里可以按中文名、英文名，或者直接展开名单勾选批量加；都会先汇总到待发名单，再统一生成标准 Excel。</p>
           </div>
           <span className={`quick-template-badge${rememberedRoster.length ? ' active' : ''}`}>
             {rememberedRoster.length ? `已记住 ${rememberedRoster.length} 人` : '暂未记住名单'}
           </span>
         </div>
-        <textarea
-          className="input-field quick-template-input"
-          rows={8}
-          placeholder={'李晓彤 0.5\n周子然 1\n王一诺 0.8'}
-          value={quickInput}
-          onChange={(event) => setQuickInput(event.target.value)}
-        />
+
+        <div className="quick-mode-tabs">
+          <button
+            type="button"
+            className={`quick-mode-tab${inputMode === 'chinese' ? ' active' : ''}`}
+            onClick={() => setInputMode('chinese')}
+          >
+            中文名
+          </button>
+          <button
+            type="button"
+            className={`quick-mode-tab${inputMode === 'english' ? ' active' : ''}`}
+            onClick={() => setInputMode('english')}
+          >
+            英文名
+          </button>
+          <button
+            type="button"
+            className={`quick-mode-tab${inputMode === 'picker' ? ' active' : ''}`}
+            onClick={() => setInputMode('picker')}
+          >
+            展开勾选
+          </button>
+        </div>
+
+        {inputMode !== 'picker' ? (
+          <>
+            <textarea
+              className="input-field quick-template-input"
+              rows={8}
+              placeholder={
+                inputMode === 'english'
+                  ? 'Amy Lee 0.5\nSally, Chris 1'
+                  : '李晓彤 0.5\n周子然 王一诺 1'
+              }
+              value={quickInput}
+              onChange={(event) => setQuickInput(event.target.value)}
+            />
+            <div className="quick-template-actions">
+              <button
+                className="btn btn-ghost"
+                type="button"
+                onClick={() => appendParsedRewards(inputMode)}
+              >
+                加入待发名单
+              </button>
+              <span className="quick-template-hint">
+                {inputMode === 'english'
+                  ? '英文名支持；如果重名，会提示人工校验，不会自动乱配。'
+                  : '中文名同一行可写多个人名，但人名之间仍要有空格、顿号或逗号。'}
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="quick-picker-head">
+              <span className="quick-template-hint">直接点选学生，再批量加几；可以反复加多轮。</span>
+              <div className="quick-picker-bar">
+                <select
+                  className="input-field quick-sort-select"
+                  value={studentSortKey}
+                  onChange={(event) => onStudentSortChange(event.target.value as StudentSortKey)}
+                >
+                  {STUDENT_SORT_OPTIONS.map((option) => (
+                    <option key={option.key} value={option.key}>{option.label}</option>
+                  ))}
+                </select>
+                <input
+                  className="input-field quick-picker-input"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  placeholder="加几"
+                  value={pickerAmount}
+                  onChange={(event) => setPickerAmount(event.target.value)}
+                />
+                <span className="config-unit">MP</span>
+                <button className="btn btn-ghost" type="button" onClick={appendPickerRewards}>
+                  批量加入
+                </button>
+              </div>
+            </div>
+            <div className="quick-picker-list">
+              {sortedRoster.map((student) => (
+                <label
+                  key={student.studentId}
+                  className={`student-chip ${selectedStudentIds.has(student.studentId) ? 'selected' : ''}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedStudentIds.has(student.studentId)}
+                    onChange={() => togglePickerStudent(student.studentId)}
+                  />
+                  <span>{student.englishName || student.chineseName}</span>
+                  {student.englishName && <span className="chip-sub">{student.chineseName}</span>}
+                </label>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div className="quick-draft-panel">
+          <div className="quick-draft-head">
+            <strong>待发名单</strong>
+            <div className="quick-draft-actions">
+              <span className="quick-template-badge active">{draftRewards.length} 人</span>
+              {draftRewards.length > 0 && (
+                <button className="btn btn-ghost btn-sm" type="button" onClick={clearDraftRewards}>
+                  清空
+                </button>
+              )}
+            </div>
+          </div>
+          {draftRewards.length > 0 ? (
+            <div className="quick-draft-list">
+              {draftRewards.map((reward) => (
+                <div key={reward.studentId} className="quick-draft-item">
+                  <div>
+                    <strong>{reward.englishName || reward.chineseName}</strong>
+                  </div>
+                  <div className="quick-draft-right">
+                    <span>{reward.amount} MP</span>
+                    <button type="button" onClick={() => removeDraftReward(reward.studentId)}>×</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="quick-template-hint">还没有加入任何学生。</div>
+          )}
+        </div>
+
         <div className="quick-template-actions">
           <button className="btn btn-ghost" type="button" onClick={downloadQuickTemplate}>
             直接生成标准模板
@@ -594,6 +931,8 @@ function StepPreview({
   dailyRate,
   defaultParticipation,
   bonusItems,
+  studentSortKey,
+  onStudentSortChange,
   modules,
   onSchemeChange,
   onDailyRateChange,
@@ -616,6 +955,8 @@ function StepPreview({
   dailyRate: number;
   defaultParticipation: number;
   bonusItems: BonusItem[];
+  studentSortKey: StudentSortKey;
+  onStudentSortChange: (value: StudentSortKey) => void;
   modules: Set<Module>;
   onSchemeChange: (id: SchemeId, data?: SavedCustomScheme) => void;
   onDailyRateChange: (v: number) => void;
@@ -643,6 +984,7 @@ function StepPreview({
   const [savedSchemes, setSavedSchemes] = useState<SavedCustomScheme[]>([]);
   const [showEditor, setShowEditor] = useState(false);
   const [editingScheme, setEditingScheme] = useState<SavedCustomScheme | undefined>();
+  const sortedStudents = sortStudentList(students, studentSortKey);
 
   useEffect(() => {
     setSavedSchemes(loadSavedSchemes());
@@ -798,7 +1140,18 @@ function StepPreview({
 
       {modules.has('课堂参与') && (
         <div className="participation-section">
-          <div className="section-mini-title">课堂参与</div>
+          <div className="list-toolbar">
+            <div className="section-mini-title">课堂参与</div>
+            <select
+              className="input-field quick-sort-select"
+              value={studentSortKey}
+              onChange={(event) => onStudentSortChange(event.target.value as StudentSortKey)}
+            >
+              {STUDENT_SORT_OPTIONS.map((option) => (
+                <option key={option.key} value={option.key}>{option.label}</option>
+              ))}
+            </select>
+          </div>
           <div className="default-row">
             <span className="config-label">全班默认值</span>
             <input
@@ -813,7 +1166,7 @@ function StepPreview({
           </div>
           <p className="section-mini-desc">勾选PK获胜学生，一键批量改值</p>
           <div className="student-select-list">
-            {students.map((s) => (
+            {sortedStudents.map((s) => (
               <label key={s.studentId} className={`student-chip ${selectedSids.has(s.studentId) ? 'selected' : ''}`}>
                 <input type="checkbox" checked={selectedSids.has(s.studentId)} onChange={() => toggleStudent(s.studentId)} />
                 <span>{s.englishName}</span>
@@ -842,7 +1195,18 @@ function StepPreview({
 
       {modules.has('个性化奖励') && (
         <div className="bonus-section">
-          <div className="section-mini-title">个性化奖励</div>
+          <div className="list-toolbar">
+            <div className="section-mini-title">个性化奖励</div>
+            <select
+              className="input-field quick-sort-select"
+              value={studentSortKey}
+              onChange={(event) => onStudentSortChange(event.target.value as StudentSortKey)}
+            >
+              {STUDENT_SORT_OPTIONS.map((option) => (
+                <option key={option.key} value={option.key}>{option.label}</option>
+              ))}
+            </select>
+          </div>
           <div className="bonus-add-row">
             <input
               className="input-field"
@@ -863,7 +1227,7 @@ function StepPreview({
             <input className="input-field" placeholder="MP" type="number" step="0.1" value={bonusAmount} onChange={(e) => setBonusAmount(e.target.value)} style={{ width: 80 }} />
           </div>
           <div className="student-select-list">
-            {students.map((s) => (
+            {sortedStudents.map((s) => (
               <label key={s.studentId} className={`student-chip ${bonusStudents.has(s.studentId) ? 'selected' : ''}`}>
                 <input type="checkbox" checked={bonusStudents.has(s.studentId)} onChange={() => setBonusStudents((p) => { const n = new Set(p); n.has(s.studentId) ? n.delete(s.studentId) : n.add(s.studentId); return n; })} />
                 <span>{s.englishName}</span>

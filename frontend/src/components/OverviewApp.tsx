@@ -12,7 +12,8 @@ import type {
   OverviewThemeOption,
   PhaseChallengeRow,
 } from '../types/overview';
-import { getResolvedStudents, importStudentNames } from '../utils/classProfiles';
+import { getResolvedStudents, importStudentNames, updateClassProfile } from '../utils/classProfiles';
+import type { StudentInfo } from '../types';
 import { ALL_DAYS, getOrderedChallengeDays } from '../utils/classSchedule';
 import {
   addCommunicationRecord,
@@ -143,19 +144,25 @@ function StudentPicker({
   selected,
   onToggle,
   tone = 'neutral',
+  nameMap,
 }: {
   studentNames: string[];
   selected: string[];
   onToggle: (name: string) => void;
   tone?: StudentPickerTone;
+  nameMap?: Map<string, string>;
 }) {
   if (studentNames.length === 0) {
     return <p className="ov-empty-hint">当前班级还没有导入学生名单。</p>;
   }
 
+  const sorted = nameMap
+    ? [...studentNames].sort((a, b) => (nameMap.get(a) || a).localeCompare(nameMap.get(b) || b, 'en', { sensitivity: 'base' }))
+    : sortStudentNames(studentNames);
+
   return (
     <div className="ov-student-grid">
-      {sortStudentNames(studentNames).map((name) => (
+      {sorted.map((name) => (
         <label
           key={name}
           className={`ov-student-chip ov-student-chip-tone-${tone}${selected.includes(name) ? ' active' : ''}`}
@@ -165,7 +172,7 @@ function StudentPicker({
             checked={selected.includes(name)}
             onChange={() => onToggle(name)}
           />
-          <span>{name}</span>
+          <span>{nameMap?.get(name) || name}</span>
         </label>
       ))}
     </div>
@@ -481,6 +488,9 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
   const [studentNames, setStudentNames] = useState<string[]>(() =>
     sortStudentNames(getResolvedStudents(classCode).map((student) => student.chineseName)),
   );
+  const [resolvedStudents, setResolvedStudents] = useState<StudentInfo[]>(() => getResolvedStudents(classCode));
+  const [editingChineseName, setEditingChineseName] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
   const orderedDays = useMemo(() => getOrderedChallengeDays(classCode), [classCode]);
   const [week, setWeek] = useState(() => getCurrentWeek());
   const [content, setContent] = useState<OverviewContent>(() =>
@@ -494,8 +504,33 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
   const [studentListCollapsed, setStudentListCollapsed] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
+  // Map Chinese name → English name for display throughout the overview
+  const englishNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of resolvedStudents) {
+      if (s.englishName) map.set(s.chineseName, s.englishName);
+    }
+    return map;
+  }, [resolvedStudents]);
+
+  /** Translate a Chinese name to its English display name (falls back to Chinese). */
+  function displayName(chineseName: string): string {
+    return englishNameMap.get(chineseName) || chineseName;
+  }
+
+  /** Translate an array of Chinese names to English display names, sorted by English name and joined. */
+  function displayNames(chineseNames: string[]): string {
+    return [...chineseNames]
+      .map((cn) => ({ cn, display: englishNameMap.get(cn) || cn }))
+      .sort((a, b) => a.display.localeCompare(b.display, 'en', { sensitivity: 'base' }))
+      .map((item) => item.display)
+      .join('、');
+  }
+
   useEffect(() => {
-    const nextNames = sortStudentNames(getResolvedStudents(classCode).map((student) => student.chineseName));
+    const nextResolved = getResolvedStudents(classCode);
+    const nextNames = sortStudentNames(nextResolved.map((student) => student.chineseName));
+    setResolvedStudents(nextResolved);
     setStudentNames(nextNames);
     setStudentListCollapsed(nextNames.length > 12);
     const draft = loadDraft(classCode, week);
@@ -552,6 +587,26 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
     });
   }
 
+  function handleEnglishNameDoubleClick(chineseName: string) {
+    const student = resolvedStudents.find((s) => s.chineseName === chineseName);
+    setEditingChineseName(chineseName);
+    setEditingValue(student?.englishName ?? '');
+  }
+
+  function handleEnglishNameSave() {
+    if (editingChineseName === null) return;
+    const trimmed = editingValue.trim();
+    const nextResolved = resolvedStudents.map((s) =>
+      s.chineseName === editingChineseName ? { ...s, englishName: trimmed || undefined } : s,
+    );
+    setResolvedStudents(nextResolved);
+    updateClassProfile(classCode, {
+      students: nextResolved,
+    });
+    setEditingChineseName(null);
+    setEditingValue('');
+  }
+
   function handleWeekChange(nextWeek: number) {
     setWeek(nextWeek);
     const draft = loadDraft(classCode, nextWeek);
@@ -586,7 +641,10 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
   }
 
   function applyStudentNames(names: string[]) {
-    const nextNames = sortStudentNames(importStudentNames(classCode, names).map((student) => student.chineseName));
+    importStudentNames(classCode, names);
+    const nextResolved = getResolvedStudents(classCode);
+    const nextNames = sortStudentNames(nextResolved.map((student) => student.chineseName));
+    setResolvedStudents(nextResolved);
     setStudentNames(nextNames);
     setNotice(`已导入 ${nextNames.length} 位学生。`);
   }
@@ -781,9 +839,36 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
             </div>
             {studentNames.length > 0 && !studentListCollapsed ? (
               <div className="ov-student-grid">
-                {studentNames.map((name) => (
-                  <span key={name} className="ov-student-chip ov-student-chip-static">{name}</span>
-                ))}
+                {[...resolvedStudents].sort((a, b) =>
+                  (a.englishName || a.chineseName).localeCompare(b.englishName || b.chineseName, 'en', { sensitivity: 'base' })
+                ).map((student) => {
+                  const isEditing = editingChineseName === student.chineseName;
+                  const displayName = student.englishName || student.chineseName;
+                  return isEditing ? (
+                    <input
+                      key={student.chineseName}
+                      className="ov-student-chip ov-student-chip-edit"
+                      autoFocus
+                      value={editingValue}
+                      placeholder={student.chineseName}
+                      onChange={(e) => setEditingValue(e.target.value)}
+                      onBlur={handleEnglishNameSave}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleEnglishNameSave();
+                        if (e.key === 'Escape') { setEditingChineseName(null); setEditingValue(''); }
+                      }}
+                    />
+                  ) : (
+                    <span
+                      key={student.chineseName}
+                      className="ov-student-chip ov-student-chip-static"
+                      title={`${student.chineseName}${student.englishName ? ' / ' + student.englishName : ''} — 双击修改英文名`}
+                      onDoubleClick={() => handleEnglishNameDoubleClick(student.chineseName)}
+                    >
+                      {displayName}
+                    </span>
+                  );
+                })}
               </div>
             ) : studentNames.length > 0 ? (
               <div className="ov-empty-state-inline">
@@ -882,6 +967,7 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
                         selected={row.selectedStudents}
                         onToggle={(name) => togglePhaseStudent(row.id, name)}
                         tone={getPhaseTone(row.key)}
+                        nameMap={englishNameMap}
                       />
                     </div>
                     <div className="ov-phase-editor-detail-grid">
@@ -1136,6 +1222,7 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
                         ),
                       }))
                     }
+                    nameMap={englishNameMap}
                   />
                   <div className="ov-three-cols">
                     <input
@@ -1204,11 +1291,11 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
             </div>
             {communicationStats.contacted.length > 0 && (
               <div className="ov-history-list">
-                {communicationStats.contacted.map((name) => {
+                {[...communicationStats.contacted].sort((a, b) => displayName(a).localeCompare(displayName(b), 'en', { sensitivity: 'base' })).map((name) => {
                   const record = communicationStats.latestByStudent[name];
                   return (
                     <div key={name} className="ov-history-item">
-                      <strong>{name}</strong>
+                      <strong>{displayName(name)}</strong>
                       <span>{record.teacherName || '未写交流人'} · {record.scheduleText || '未写时间地点'} · {formatHistoryDate(record.createdAt)}</span>
                     </div>
                   );
@@ -1352,7 +1439,7 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
                   {phasePreviewRows.map((row: PhaseChallengeRow) => (
                       <Fragment key={row.id}>
                         <div key={`${row.id}_stage`} className="ov-paper-phase-stage">{row.label}</div>
-                        <div key={`${row.id}_students`} className="ov-paper-phase-cell">{sortStudentNames(row.selectedStudents).join('、')}</div>
+                        <div key={`${row.id}_students`} className="ov-paper-phase-cell">{displayNames(row.selectedStudents)}</div>
                         <div key={`${row.id}_content`} className="ov-paper-phase-cell">{row.challengeContent.trim()}</div>
                         <div key={`${row.id}_method`} className="ov-paper-phase-cell">{row.method.trim()}</div>
                       </Fragment>
@@ -1412,7 +1499,7 @@ export default function OverviewApp({ classInfo, onBack }: Props) {
                         {group.scheduleText && <span>时间地点：{group.scheduleText}</span>}
                       </div>
                       {group.selectedStudents.length > 0 && (
-                        <div className="ov-paper-comm-students">{sortStudentNames(group.selectedStudents).join('、')}</div>
+                        <div className="ov-paper-comm-students">{displayNames(group.selectedStudents)}</div>
                       )}
                       {group.note && <p className="ov-paper-comm-note">{group.note}</p>}
                     </article>

@@ -1,5 +1,8 @@
-import * as XLSX from 'xlsx';
 import type { StudentRecord, ResourceEntry, StudentData } from '../types';
+
+async function getXlsx() {
+  return await import('xlsx');
+}
 
 function parsePercent(val: unknown): number | null {
   if (val === null || val === undefined || val === '' || val === 'NaN') return null;
@@ -21,8 +24,9 @@ export interface ParsedBasicData {
 export function parseBasicFile(file: File): Promise<ParsedBasicData> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
+        const XLSX = await getXlsx();
         const data = new Uint8Array(e.target!.result as ArrayBuffer);
         const wb = XLSX.read(data, { type: 'array' });
 
@@ -133,8 +137,9 @@ export function parseDailyCheckFile(
 ): Promise<StudentData[]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
+        const XLSX = await getXlsx();
         const data = new Uint8Array(e.target!.result as ArrayBuffer);
         const wb = XLSX.read(data, { type: 'array' });
         const ws = wb.Sheets['data'] || wb.Sheets[wb.SheetNames[0]];
@@ -161,10 +166,11 @@ export function parseDailyCheckFile(
   });
 }
 
-export function generateOutputExcel(
+export async function generateOutputExcel(
   students: StudentData[],
   mpMap: Map<string, number>
-): ArrayBuffer {
+): Promise<ArrayBuffer> {
+  const XLSX = await getXlsx();
   const wb = XLSX.utils.book_new();
   const rows = students
     .filter((s) => (mpMap.get(s.studentId) ?? 0) > 0)

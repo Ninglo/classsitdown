@@ -7,34 +7,128 @@ const DAY_CHAR_MAP: Record<string, string> = {
 
 const MISSED_KEYWORDS = ['请假', '缺课', '缺了', '请了假', '缺'];
 
-function normalizeNaturalTime(period: string | undefined, hourText: string, minuteText?: string): string | null {
-  let hour = parseInt(hourText, 10);
-  if (Number.isNaN(hour)) return null;
+const CHINESE_DIGIT_MAP: Record<string, number> = {
+  '零': 0, '〇': 0,
+  '一': 1, '二': 2, '两': 2, '三': 3, '四': 4,
+  '五': 5, '六': 6, '七': 7, '八': 8, '九': 9,
+};
+
+function parseNumberToken(text: string | undefined): number | null {
+  const value = String(text || '').trim();
+  if (!value) return null;
+  if (/^\d+$/.test(value)) return parseInt(value, 10);
+  if (value === '十') return 10;
+
+  let total = 0;
+  let current = 0;
+  for (const ch of value) {
+    if (ch === '十') {
+      total += (current || 1) * 10;
+      current = 0;
+      continue;
+    }
+    const digit = CHINESE_DIGIT_MAP[ch];
+    if (digit == null) return null;
+    current = current * 10 + digit;
+  }
+
+  return total + current;
+}
+
+function normalizeNaturalTime(period: string | undefined, hourText: string, minuteText?: string, preferAfternoon = false): string | null {
+  let hour = parseNumberToken(hourText);
+  if (hour == null) return null;
   let minute = 0;
   if (minuteText === '半') minute = 30;
-  else if (minuteText != null && minuteText !== '') minute = parseInt(minuteText, 10);
+  else if (minuteText != null && minuteText !== '') {
+    const parsedMinute = parseNumberToken(minuteText);
+    if (parsedMinute == null) return null;
+    minute = parsedMinute;
+  }
   if (Number.isNaN(minute) || minute < 0 || minute > 59) return null;
   if ((period === '下午' || period === '晚上' || period === '傍晚') && hour < 12) hour += 12;
   if (period === '中午' && hour < 11) hour += 12;
+  if (!period && preferAfternoon && hour >= 1 && hour <= 7) hour += 12;
   if (hour > 23) return null;
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
-function extractTimedRequests(text: string): { day: string; time: string; mode: 'exact' | 'after' | 'before'; pos: number; raw: string }[] {
-  const requests: { day: string; time: string; mode: 'exact' | 'after' | 'before'; pos: number; raw: string }[] = [];
-  const timedRe = /(?:周|星期)([一二三四五六日天])\s*(上午|早上|中午|下午|晚上|傍晚)?\s*(\d{1,2})(?:\s*(?:[:：点时])\s*(半|\d{1,2}))?(?:\s*分)?\s*(左右|前|后|以前|以后|之前|之后)?/g;
+function pushTimedRequest(
+  requests: { day: string; time: string; endTime?: string; mode: 'exact' | 'after' | 'before' | 'range'; pos: number; raw: string }[],
+  day: string,
+  raw: string,
+  pos: number,
+  time: string,
+  mode: 'exact' | 'after' | 'before' | 'range',
+  endTime?: string,
+): void {
+  requests.push({ day, time, endTime, mode, pos, raw });
+}
+
+function parseTimeExpression(segment: string): { time: string; length: number } | null {
+  const colon = segment.match(/^(上午|早上|中午|下午|晚上|傍晚)?\s*([零〇一二两三四五六七八九十\d]{1,3})\s*[:：]\s*([零〇一二三四五六七八九十\d]{1,2})/);
+  if (colon) {
+    const time = normalizeNaturalTime(colon[1], colon[2], colon[3], true);
+    if (time) return { time, length: colon[0].length };
+  }
+
+  const chinese = segment.match(/^(上午|早上|中午|下午|晚上|傍晚)?\s*([零〇一二两三四五六七八九十\d]{1,3})\s*(?:点|时)(?:\s*(半|[零〇一二三四五六七八九十\d]{1,2}))?(?:\s*分)?/);
+  if (chinese) {
+    const time = normalizeNaturalTime(chinese[1], chinese[2], chinese[3], true);
+    if (time) return { time, length: chinese[0].length };
+  }
+
+  return null;
+}
+
+function extractTimedRequests(text: string): { day: string; time: string; endTime?: string; mode: 'exact' | 'after' | 'before' | 'range'; pos: number; raw: string }[] {
+  const requests: { day: string; time: string; endTime?: string; mode: 'exact' | 'after' | 'before' | 'range'; pos: number; raw: string }[] = [];
+  const dayRe = /(?:周|星期)([一二三四五六日天])/g;
+
   let match: RegExpExecArray | null;
-  while ((match = timedRe.exec(text)) !== null) {
+  while ((match = dayRe.exec(text)) !== null) {
     const day = DAY_CHAR_MAP[match[1]] || `周${match[1]}`;
-    const time = normalizeNaturalTime(match[2], match[3], match[4]);
-    if (!time) continue;
-    const qualifier = match[5] || '';
-    let mode: 'exact' | 'after' | 'before' = 'exact';
+    const tail = text.slice(match.index + match[0].length);
+    const cleanTail = tail.replace(/^[\s,，、]*(?:在)?\s*/, '');
+    const offset = tail.length - cleanTail.length;
+    const start = parseTimeExpression(cleanTail);
+    if (!start) continue;
+
+    const afterStart = cleanTail.slice(start.length);
+    const rangeMatch = afterStart.match(/^\s*(?:到|至|-|—|~|～)\s*/);
+    if (rangeMatch) {
+      const end = parseTimeExpression(afterStart.slice(rangeMatch[0].length));
+      if (end) {
+        pushTimedRequest(
+          requests,
+          day,
+          match[0] + tail.slice(0, offset + start.length + rangeMatch[0].length + end.length),
+          match.index,
+          start.time,
+          'range',
+          end.time,
+        );
+        continue;
+      }
+    }
+
+    const qualifierMatch = afterStart.match(/^\s*(左右|前|后|以前|以后|之前|之后)?/);
+    const qualifier = qualifierMatch?.[1] || '';
+    let mode: 'exact' | 'after' | 'before' | 'range' = 'exact';
     if (qualifier === '后' || qualifier === '以后' || qualifier === '之后') mode = 'after';
     else if (qualifier === '前' || qualifier === '以前' || qualifier === '之前') mode = 'before';
-    requests.push({ day, time, mode, pos: match.index, raw: match[0] });
+
+    pushTimedRequest(
+      requests,
+      day,
+      match[0] + tail.slice(0, offset + start.length + (qualifierMatch?.[0]?.length || 0)),
+      match.index,
+      start.time,
+      mode,
+    );
   }
-  return requests;
+
+  return requests.sort((a, b) => a.pos - b.pos);
 }
 
 // ── Week helpers ──
@@ -251,7 +345,7 @@ export function parseQuickInput(
   let dm: RegExpExecArray | null;
   while ((dm = dayRe.exec(text)) !== null) {
     const day = DAY_CHAR_MAP[dm[1]] || `周${dm[1]}`;
-    const paired = timedRequests.some((p) => Math.abs(p.pos - dm!.index) < 8);
+    const paired = timedRequests.some((p) => p.pos === dm!.index);
     allDays.push({ day, pos: dm.index, paired });
   }
 
@@ -265,7 +359,7 @@ export function parseQuickInput(
   // 5. Interpret
   let missedDay: string | null = null;
   let missedModeHint: '周中' | '周末' | null = null;
-  const makeupRequests: { day: string; time: string; mode: 'exact' | 'after' | 'before'; raw: string }[] = [];
+  const makeupRequests: { day: string; time: string; endTime?: string; mode: 'exact' | 'after' | 'before' | 'range'; raw: string }[] = [];
   const makeupDaysOnly: string[] = [];
 
   if (missedPos >= 0) {
@@ -279,7 +373,7 @@ export function parseQuickInput(
       return (!best || dist < best.dist) ? { day: d.day, dist } : best;
     }, null);
     if (closest && closest.dist < 20) missedDay = closest.day;
-    if (!missedDay && timedRequests.length > 0) {
+    if (!missedDay && !missedModeHint && timedRequests.length > 0) {
       const cp = timedRequests.reduce<{ ref: typeof timedRequests[0]; dist: number } | null>((best, p) => {
         const dist = Math.abs(p.pos - missedPos);
         return (!best || dist < best.dist) ? { ref: p, dist } : best;
@@ -289,7 +383,7 @@ export function parseQuickInput(
         timedRequests.splice(timedRequests.indexOf(cp.ref), 1);
       }
     }
-    for (const req of timedRequests) makeupRequests.push({ day: req.day, time: req.time, mode: req.mode, raw: req.raw });
+    for (const req of timedRequests) makeupRequests.push({ day: req.day, time: req.time, endTime: req.endTime, mode: req.mode, raw: req.raw });
     for (const d of allDays) {
       if (d.paired) continue;
       if (d.day === missedDay && Math.abs(d.pos - missedPos) < 20) continue;
@@ -298,10 +392,10 @@ export function parseQuickInput(
   } else if (timedRequests.length >= 2) {
     missedDay = timedRequests[0].day;
     for (let i = 1; i < timedRequests.length; i++) {
-      makeupRequests.push({ day: timedRequests[i].day, time: timedRequests[i].time, mode: timedRequests[i].mode, raw: timedRequests[i].raw });
+      makeupRequests.push({ day: timedRequests[i].day, time: timedRequests[i].time, endTime: timedRequests[i].endTime, mode: timedRequests[i].mode, raw: timedRequests[i].raw });
     }
   } else if (timedRequests.length === 1) {
-    makeupRequests.push({ day: timedRequests[0].day, time: timedRequests[0].time, mode: timedRequests[0].mode, raw: timedRequests[0].raw });
+    makeupRequests.push({ day: timedRequests[0].day, time: timedRequests[0].time, endTime: timedRequests[0].endTime, mode: timedRequests[0].mode, raw: timedRequests[0].raw });
   } else {
     const unpaired = allDays.filter((d) => !d.paired);
     if (unpaired.length >= 2) {

@@ -6,6 +6,7 @@ const https = require('https');
 const fs = require('fs/promises');
 const os = require('os');
 const { spawn } = require('child_process');
+const compression = require('compression');
 const EducationSystemScraper = require('./scraper/scraper');
 
 const app = express();
@@ -15,6 +16,8 @@ const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const CNF_BASE_URL = process.env.CNFADMIN_BASE_URL || 'https://cnfadmin.cnfschool.net';
 const DEFAULT_REPORT_SCRIPT_DIR = path.resolve(os.homedir(), '.remotelab/instances/trial23/scripts');
 const REPORT_SCRIPT_DIR = process.env.CLASS_DAILY_REPORT_SCRIPT_DIR || DEFAULT_REPORT_SCRIPT_DIR;
+const DEFAULT_USAGE_LOG_PATH = path.resolve(os.homedir(), '.remotelab/instances/trial23/data/classsitdown-usage-events.jsonl');
+const USAGE_LOG_PATH = process.env.CLASSSITDOWN_USAGE_LOG_PATH || DEFAULT_USAGE_LOG_PATH;
 const sessions = new Map();
 
 function getTraceId(req) {
@@ -26,6 +29,121 @@ function logTrace(traceId, stage, payload = {}) {
   console.log('[login-trace]', JSON.stringify({ traceId, stage, ...payload }));
 }
 
+function sanitizeText(value, maxLength = 120) {
+  return String(value || '').trim().slice(0, maxLength);
+}
+
+function getClientIp(req) {
+  const forwarded = String(req.headers['x-forwarded-for'] || '').trim();
+  if (forwarded) {
+    return forwarded.split(',')[0].trim();
+  }
+  return sanitizeText(req.socket?.remoteAddress || '', 64);
+}
+
+async function appendUsageEvent(event) {
+  const line = `${JSON.stringify(event)}\n`;
+  await fs.mkdir(path.dirname(USAGE_LOG_PATH), { recursive: true });
+  await fs.appendFile(USAGE_LOG_PATH, line, 'utf8');
+}
+
+async function readUsageEvents(days = 30) {
+  try {
+    const raw = await fs.readFile(USAGE_LOG_PATH, 'utf8');
+    const minTime = Date.now() - (Math.max(1, Number(days) || 30) * 24 * 60 * 60 * 1000);
+    return raw
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .filter((item) => {
+        const ts = Date.parse(String(item.ts || ''));
+        return Number.isFinite(ts) && ts >= minTime;
+      });
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+}
+
+function toSortedEntries(record, keyName, valueName = 'count') {
+  return Object.entries(record)
+    .map(([key, count]) => ({ [keyName]: key, [valueName]: count }))
+    .sort((a, b) => (
+      Number(b[valueName]) - Number(a[valueName])
+      || String(a[keyName]).localeCompare(String(b[keyName]), 'zh-Hans-CN')
+    ));
+}
+
+function summarizeUsageEvents(events) {
+  const totalByEvent = {};
+  const totalByUser = {};
+  const totalByModule = {};
+  const totalByDay = {};
+  const activeUsersByDay = {};
+
+  for (const event of events) {
+    const eventName = sanitizeText(event.event || 'unknown');
+    const teacherName = sanitizeText(event.teacherName || '匿名老师');
+    const moduleName = sanitizeText(event.module || 'unknown');
+    const day = String(event.ts || '').slice(0, 10);
+
+    totalByEvent[eventName] = (totalByEvent[eventName] || 0) + 1;
+    totalByUser[teacherName] = (totalByUser[teacherName] || 0) + 1;
+    totalByModule[moduleName] = (totalByModule[moduleName] || 0) + 1;
+    if (day) {
+      totalByDay[day] = (totalByDay[day] || 0) + 1;
+      activeUsersByDay[day] = activeUsersByDay[day] || new Set();
+      activeUsersByDay[day].add(teacherName);
+    }
+  }
+
+  const daily = Object.keys(totalByDay)
+    .sort()
+    .map((day) => ({
+      day,
+      events: totalByDay[day],
+      activeUsers: activeUsersByDay[day]?.size || 0,
+    }));
+
+  return {
+    totalEvents: events.length,
+    uniqueUsers: Object.keys(totalByUser).length,
+    byEvent: toSortedEntries(totalByEvent, 'event'),
+    byUser: toSortedEntries(totalByUser, 'teacherName'),
+    byModule: toSortedEntries(totalByModule, 'module'),
+    daily,
+    recentEvents: events.slice(-20).reverse(),
+  };
+}
+
+function buildUsageEvent(req, session, payload = {}) {
+  return {
+    ts: new Date().toISOString(),
+    event: sanitizeText(payload.event || 'unknown'),
+    module: sanitizeText(payload.module || 'unknown'),
+    teacherName: sanitizeText(session?.username || payload.teacherName || '匿名老师'),
+    className: sanitizeText(payload.className || ''),
+    screen: sanitizeText(payload.screen || ''),
+    detail: sanitizeText(payload.detail || '', 240),
+    sid: sanitizeText(payload.sid || '', 80),
+    sessionId: sanitizeText(parseCookies(req.headers.cookie || '')[SESSION_COOKIE] || '', 80),
+    ip: getClientIp(req),
+    userAgent: sanitizeText(req.headers['user-agent'] || '', 240),
+    env: sanitizeText(process.env.APP_ENV || process.env.NODE_ENV || 'production', 40),
+  };
+}
+
+app.use(compression());
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '20mb' }));
 
@@ -85,6 +203,94 @@ function requireLoggedInSession(req, res) {
   return session;
 }
 
+function getSetCookieLines(headers) {
+  if (typeof headers.getSetCookie === 'function') {
+    const lines = headers.getSetCookie();
+    if (Array.isArray(lines) && lines.length > 0) return lines;
+  }
+  const raw = headers.get('set-cookie');
+  if (!raw) return [];
+  return raw.split(/,(?=\s*[^;,=\s]+=[^;,]*)/g).map((line) => line.trim()).filter(Boolean);
+}
+
+function mergeCookies(jar, headers) {
+  for (const line of getSetCookieLines(headers)) {
+    const pair = line.split(';', 1)[0] || '';
+    const sep = pair.indexOf('=');
+    if (sep <= 0) continue;
+    const name = pair.slice(0, sep).trim();
+    const value = pair.slice(sep + 1).trim();
+    if (name) jar[name] = value;
+  }
+}
+
+function buildCookieHeader(jar) {
+  return Object.entries(jar).map(([name, value]) => `${name}=${value}`).join('; ');
+}
+
+async function fetchWithJar(url, options = {}, jar = {}) {
+  const headers = new Headers(options.headers || {});
+  const cookieHeader = buildCookieHeader(jar);
+  if (cookieHeader) headers.set('Cookie', cookieHeader);
+  const response = await fetch(url, { ...options, headers, redirect: 'manual' });
+  mergeCookies(jar, response.headers);
+  return response;
+}
+
+async function loginCNF(username, password) {
+  const jar = {};
+  const pageResp = await fetchWithJar(`${CNF_BASE_URL}/admin/auth/login`, { method: 'GET' }, jar);
+  const pageHtml = await pageResp.text();
+  const token = pageHtml.match(/_token:\s*"([^"]+)"/)?.[1]?.trim();
+  if (!token) throw new Error('未能解析教务系统登录 token');
+
+  const body = new URLSearchParams({ username, password, _token: token, remember: 'false' });
+  const loginResp = await fetchWithJar(`${CNF_BASE_URL}/admin/auth/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      Accept: 'application/json, text/plain, */*',
+    },
+    body: body.toString(),
+  }, jar);
+
+  if (loginResp.status >= 300 && loginResp.status < 400) {
+    return jar;
+  }
+
+  const data = await loginResp.json().catch(() => ({}));
+  if (String(data?.code) !== '1') {
+    throw new Error(String(data?.msg || '账号或密码错误'));
+  }
+  return jar;
+}
+
+function parseMySquadHtml(html) {
+  const classes = [];
+  const rowPattern = /<tr\s*>([\s\S]*?)<\/tr>/gi;
+  let match;
+  while ((match = rowPattern.exec(html)) !== null) {
+    const content = match[1];
+    const idMatch = content.match(/data-id="(\d+)"/);
+    const linkMatch = content.match(/squad_console\?type=(\w+)&id=(\d+)/);
+    const nameMatch = content.match(/column-name[^>]*>\s*(?:<a[^>]*>)?\s*([^<]+)/);
+    const sectionMatch = content.match(/column-section[^>]*>\s*([\s\S]*?)\s*<\/td>/);
+    const groupMatch = content.match(/column-group[^>]*>\s*([\s\S]*?)\s*<\/td>/);
+    const teacherMatch = content.match(/column-class_teacher[^>]*>\s*([\s\S]*?)\s*<\/td>/);
+    if (idMatch && nameMatch) {
+      classes.push({
+        id: Number(idMatch[1]),
+        type: linkMatch?.[1] || 'offline',
+        name: nameMatch[1].trim(),
+        section: (sectionMatch?.[1] || '').replace(/<[^>]+>/g, '').trim(),
+        group: (groupMatch?.[1] || '').replace(/<[^>]+>/g, '').trim(),
+        tutor: (teacherMatch?.[1] || '').replace(/<[^>]+>/g, '').trim(),
+      });
+    }
+  }
+  return classes;
+}
+
 app.post('/api/scraper/login', async (req, res) => {
   const { session } = ensureSession(req, res);
   const traceId = getTraceId(req);
@@ -138,6 +344,12 @@ app.post('/api/scraper/login', async (req, res) => {
     session.username = username;
     session.lastSeenAt = Date.now();
 
+    await appendUsageEvent(buildUsageEvent(req, session, {
+      event: 'login_success',
+      module: 'auth',
+      detail: `classes=${classes.length}`,
+    }));
+
     const responseTimings = {
       routeMs: Number((classesFinishedAt - startedAt).toFixed(1)),
       scraperLogin: scraper.lastLoginTiming,
@@ -184,6 +396,37 @@ app.post('/api/traces/login-client', (req, res) => {
     userAgent: req.body?.userAgent,
   }));
   res.json({ status: 'ok', traceId });
+});
+
+app.post('/api/usage-events', async (req, res) => {
+  try {
+    const { session } = ensureSession(req, res);
+    const event = buildUsageEvent(req, session, req.body || {});
+    if (!event.event || event.event === 'unknown') {
+      return res.status(400).json({ error: '缺少 event' });
+    }
+    await appendUsageEvent(event);
+    res.json({ status: 'ok' });
+  } catch (error) {
+    console.error('❌ 使用统计写入失败:', error.message);
+    res.status(500).json({ error: '使用统计写入失败' });
+  }
+});
+
+app.get('/api/admin/usage-summary', async (req, res) => {
+  try {
+    const days = Math.min(180, Math.max(1, Number(req.query.days) || 30));
+    const events = await readUsageEvents(days);
+    res.json({
+      status: 'success',
+      days,
+      logPath: USAGE_LOG_PATH,
+      summary: summarizeUsageEvents(events),
+    });
+  } catch (error) {
+    console.error('❌ 使用统计汇总失败:', error.message);
+    res.status(500).json({ error: '使用统计汇总失败' });
+  }
 });
 
 app.post('/api/scraper/get-classes', async (req, res) => {
@@ -236,6 +479,151 @@ app.post('/api/scraper/get-student-list', async (req, res) => {
   } catch (error) {
     console.error('❌ 获取学生名单失败:', error.message);
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/scraper/batch-student-list', async (req, res) => {
+  try {
+    const session = requireLoggedInSession(req, res);
+    if (!session) return;
+
+    const { classIds } = req.body || {};
+    if (!Array.isArray(classIds) || classIds.length === 0) {
+      return res.status(400).json({ error: '缺少班级列表' });
+    }
+
+    const startedAt = performance.now();
+
+    // Resolve all squad IDs first (uses cached class map)
+    const resolved = [];
+    for (const classId of classIds) {
+      try {
+        const { squadId } = await session.scraper.resolveSquadId(classId);
+        resolved.push({ classId, squadId });
+      } catch (err) {
+        console.warn(`⚠️ 无法解析班级 ${classId}: ${err.message}`);
+      }
+    }
+
+    // Fetch all student lists in parallel
+    const results = await Promise.allSettled(
+      resolved.map(async ({ classId, squadId }) => {
+        const response = await session.scraper.request(
+          `/admin/squad/cop_mip/getStudentList?squad_id=${encodeURIComponent(squadId)}&squad_type=offline`,
+          { headers: { accept: 'application/json' } }
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!Array.isArray(data?.data)) {
+          throw new Error(String(data?.msg || `HTTP ${response.status}`));
+        }
+        return {
+          classId,
+          squadId,
+          students: data.data.map((item) => ({
+            no: String(item?.no || '').trim(),
+            chName: String(item?.ch_name || '').trim(),
+            enName: String(item?.en_name || '').trim(),
+          })),
+        };
+      })
+    );
+
+    const classes = [];
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        classes.push(result.value);
+      }
+    }
+
+    const totalStudents = classes.reduce((sum, c) => sum + c.students.length, 0);
+    const totalMs = Number((performance.now() - startedAt).toFixed(1));
+    console.log(`✅ 批量抓取 ${classes.length}/${classIds.length} 个班级，共 ${totalStudents} 人，耗时 ${totalMs}ms`);
+    res.json({ status: 'success', classes, totalMs });
+  } catch (error) {
+    console.error('❌ 批量抓取失败:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/cnf-roster', async (req, res) => {
+  try {
+    const action = String(req.body?.action || '').trim();
+    const username = String(req.body?.username || '').trim();
+    const password = String(req.body?.password || '');
+    const squadId = String(req.body?.squadId || '').trim();
+    const squadType = String(req.body?.squadType || 'offline').trim() || 'offline';
+
+    if (!username || !password) {
+      return res.status(400).json({ ok: false, error: '缺少教务账号或密码' });
+    }
+
+    if (action === 'listSquads') {
+      const jar = await loginCNF(username, password);
+      const myResp = await fetchWithJar(`${CNF_BASE_URL}/admin/my_squad`, {
+        method: 'GET',
+        headers: { Accept: 'text/html' },
+      }, jar);
+      if (myResp.status >= 300 && myResp.status < 400) {
+        throw new Error('登录态失效，请重新登录');
+      }
+      const myHtml = await myResp.text();
+      const squads = parseMySquadHtml(myHtml);
+      return res.json({ ok: true, squads, total: squads.length });
+    }
+
+    if (action === 'fetchRoster') {
+      if (!/^\d+$/.test(squadId)) {
+        return res.status(400).json({ ok: false, error: '缺少有效的班级 ID' });
+      }
+
+      const jar = await loginCNF(username, password);
+      const infoResp = await fetchWithJar(
+        `${CNF_BASE_URL}/admin/squad_console/getSquadInfo?squad_id=${encodeURIComponent(squadId)}`,
+        { method: 'GET', headers: { Accept: 'application/json' } },
+        jar
+      );
+      const infoData = await infoResp.json().catch(() => ({}));
+
+      const listResp = await fetchWithJar(
+        `${CNF_BASE_URL}/admin/squad/cop_mip/getStudentList?squad_id=${encodeURIComponent(squadId)}&squad_type=${encodeURIComponent(squadType)}`,
+        { method: 'GET', headers: { Accept: 'application/json' } },
+        jar
+      );
+      const listData = await listResp.json().catch(() => ({}));
+      if (!Array.isArray(listData?.data)) {
+        throw new Error(String(listData?.msg || `学生名单获取失败: ${listResp.status}`));
+      }
+
+      const students = listData.data.map((item) => {
+        const enName = String(item?.en_name || '').trim();
+        const chName = String(item?.ch_name || '').trim();
+        return {
+          id: Number(item?.id) || 0,
+          no: String(item?.no || '').trim(),
+          enName,
+          chName,
+          displayName: enName || chName || String(item?.no || '').trim(),
+        };
+      });
+
+      const squad = infoData?.data || {};
+      return res.json({
+        ok: true,
+        squad: {
+          id: Number(squad?.id) || Number(squadId),
+          name: String(squad?.name || '').trim(),
+          fullName: String(squad?.full_name || '').trim(),
+          type: squadType,
+        },
+        students,
+        total: students.length,
+      });
+    }
+
+    return res.status(400).json({ ok: false, error: 'action 必须为 listSquads 或 fetchRoster' });
+  } catch (error) {
+    console.error('❌ CNF名单同步失败:', error.message);
+    return res.status(502).json({ ok: false, error: error instanceof Error ? error.message : '教务名单同步失败' });
   }
 });
 
@@ -951,6 +1339,7 @@ app.post('/api/reports/class-daily-report', async (req, res) => {
   let tempDir = '';
 
   try {
+    const { session } = ensureSession(req, res);
     const {
       className = '',
       reportMode = 'standard',
@@ -977,13 +1366,14 @@ app.post('/api/reports/class-daily-report', async (req, res) => {
       ? path.resolve(REPORT_SCRIPT_DIR, 'class_daily_report_detail.py')
       : path.resolve(REPORT_SCRIPT_DIR, 'class_daily_report.py');
 
-    const args = normalizedMode === 'detail'
-      ? [checkinPath, studentPath]
-      : (hasCheckinFile ? [studentPath, checkinPath] : [studentPath]);
+    const args = [checkinPath, studentPath];
     const inferredClassName = inferClassNameFromFilename(student.name);
     const trimmedClassName = inferredClassName || String(className || '').trim();
     if (trimmedClassName) {
       args.push(trimmedClassName);
+    }
+    if (!hasCheckinFile) {
+      args.push('--no-checkin');
     }
 
     const outputPath = await runPythonReport(scriptPath, args, tempDir);
@@ -992,6 +1382,13 @@ app.post('/api/reports/class-daily-report', async (req, res) => {
     }
     const fileBuffer = await fs.readFile(outputPath);
     const downloadName = path.basename(outputPath);
+
+    await appendUsageEvent(buildUsageEvent(req, session, {
+      event: 'report_exported',
+      module: 'daily-report',
+      className: trimmedClassName,
+      detail: normalizedMode,
+    }));
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(downloadName)}`);
@@ -1020,7 +1417,12 @@ app.get('/api/translate/en-zh', async (req, res) => {
 
 app.get('/api/health', (req, res) => {
   const { session } = ensureSession(req, res);
-  res.json({ status: 'ok', loggedIn: !!session.scraper, loginInProgress: session.loginInProgress });
+  res.json({
+    status: 'ok',
+    loggedIn: !!session.scraper,
+    loginInProgress: session.loginInProgress,
+    username: session.username || '',
+  });
 });
 
 // 托管前端静态文件
@@ -1030,6 +1432,9 @@ app.use('/assets', express.static(path.join(distDir, 'assets'), {
   maxAge: '1y',
   immutable: true,
 }));
+app.use('/assets', (_req, res) => {
+  res.status(404).type('text/plain').send('Asset not found');
+});
 app.use(express.static(distDir, {
   index: 'index.html',
   setHeaders(res, filePath) {

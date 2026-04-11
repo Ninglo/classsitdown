@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { resolveSeatingKey } from '../utils/classProfiles';
 
 interface Props {
@@ -8,28 +8,52 @@ interface Props {
 }
 
 export default function NewestSeatingFrame({ classCode, onBack, active }: Props) {
-  // Use the actual key from classSeatingData (may differ in case from scraper's uppercase)
   const seatingKey = resolveSeatingKey(classCode) ?? classCode;
-  const src = `/seating/?class=${encodeURIComponent(seatingKey)}`;
+  const hostRef = useRef<HTMLDivElement | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    const existing = document.head.querySelector('link[href="/seating/"]');
-    if (existing) return undefined;
+    let cancelled = false;
+    let cleanup: (() => void) | undefined;
 
-    const link = document.createElement('link');
-    link.rel = 'prefetch';
-    link.href = '/seating/';
-    document.head.appendChild(link);
+    async function mountEmbeddedApp() {
+      if (!hostRef.current) {
+        return;
+      }
+
+      setLoaded(false);
+      setLoadError('');
+
+      try {
+        const { mountSuperamberApp } = await import('../vendor/superamber/embed');
+        if (cancelled || !hostRef.current) {
+          return;
+        }
+
+        cleanup = mountSuperamberApp(hostRef.current, {
+          launchClassName: seatingKey,
+          embedded: true,
+          setDocumentTitle: false,
+        });
+
+        if (!cancelled) {
+          setLoaded(true);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(error instanceof Error ? error.message : '座位表加载失败');
+        }
+      }
+    }
+
+    void mountEmbeddedApp();
 
     return () => {
-      link.remove();
+      cancelled = true;
+      cleanup?.();
     };
-  }, []);
-
-  useEffect(() => {
-    setLoaded(false);
-  }, [src]);
+  }, [seatingKey]);
 
   return (
     <div
@@ -54,7 +78,9 @@ export default function NewestSeatingFrame({ classCode, onBack, active }: Props)
     >
       {active && (
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 12,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
           padding: '10px 16px',
           borderBottom: '1px solid rgba(221,217,208,0.55)',
           background: 'rgba(255,255,255,0.95)',
@@ -63,23 +89,24 @@ export default function NewestSeatingFrame({ classCode, onBack, active }: Props)
           <button className="back-btn" onClick={onBack}>← 返回</button>
           <span style={{ fontSize: 14, color: '#6a746f' }}>{classCode} · 座位表</span>
           <span style={{ marginLeft: 'auto', fontSize: 12, color: '#9aa39f' }}>
-            {loaded ? '已预热' : '正在预加载'}
+            {loadError ? '加载失败' : loaded ? '已预热' : '正在预加载'}
           </span>
         </div>
       )}
-      {active && !loaded && (
+      {active && !loaded && !loadError && (
         <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>加载中...</div>
       )}
-      <iframe
-        src={src}
+      {active && loadError && (
+        <div style={{ padding: 40, textAlign: 'center', color: '#c24d4d' }}>{loadError}</div>
+      )}
+      <div
+        ref={hostRef}
         style={{
-          flex: 1, border: 'none', width: '100%',
-          opacity: active && loaded ? 1 : 0,
+          flex: 1,
+          minHeight: 0,
+          opacity: active && loaded && !loadError ? 1 : 0,
           transition: 'opacity 0.2s',
         }}
-        onLoad={() => setLoaded(true)}
-        loading="eager"
-        title={`${classCode} 座位表`}
       />
     </div>
   );

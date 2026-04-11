@@ -192,6 +192,15 @@
 
 .ov-student-chip-static {
   background: rgba(246, 249, 252, 0.96);
+  user-select: none;
+}
+
+input.ov-student-chip-edit {
+  background: #fff;
+  outline: 2px solid rgba(123, 168, 98, 0.6);
+  outline-offset: -1px;
+  font-size: 12px;
+  text-align: center;
 }
 
 .ov-student-chip input {

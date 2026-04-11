@@ -11,6 +11,7 @@ interface Props {
   classInfo?: ClassInfo | null;
   knownClasses: ClassInfo[];
   onBack: () => void;
+  onSessionExpired?: () => void;
 }
 
 interface EditableStudentRow {
@@ -161,7 +162,7 @@ async function parseRosterFile(file: File): Promise<ParsedRosterRow[]> {
   return parseRosterText(text);
 }
 
-export default function ClassRosterApp({ classInfo, knownClasses, onBack }: Props) {
+export default function ClassRosterApp({ classInfo, knownClasses, onBack, onSessionExpired }: Props) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [batchInput, setBatchInput] = useState('');
   const [batchRows, setBatchRows] = useState<ParsedRosterRow[]>([]);
@@ -227,6 +228,11 @@ export default function ClassRosterApp({ classInfo, knownClasses, onBack }: Prop
         body: JSON.stringify({ classId: targetClass }),
       });
       const data = await resp.json().catch(() => ({} as Record<string, unknown>));
+      if (resp.status === 401) {
+        setBatchNotice('登录已失效，请重新登录后再抓名单。');
+        onSessionExpired?.();
+        return;
+      }
       if (!resp.ok) {
         throw new Error((data as { error?: string }).error || `请求失败 (${resp.status})`);
       }
@@ -383,6 +389,13 @@ export default function ClassRosterApp({ classInfo, knownClasses, onBack }: Prop
                 <option key={code} value={code}>{code}</option>
               ))}
             </select>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => void handleSyncFromSystem()}
+              disabled={syncBusy || !activeClassCode}
+            >
+              {syncBusy ? '抓取中...' : '抓核心名单'}
+            </button>
             <button className="btn btn-ghost btn-sm" onClick={() => setEditorRows((rows) => [...rows, createEditableRow()])}>
               + 新增一行
             </button>

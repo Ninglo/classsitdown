@@ -2,22 +2,89 @@ import { useState, useEffect, useCallback, lazy, Suspense, startTransition } fro
 import Login from './components/Login';
 import Welcome from './components/Welcome';
 import ClassHub from './components/ClassHub';
-import NewestSeatingFrame from './components/NewestSeatingFrame';
+const NewestSeatingFrame = lazy(() => import('./components/NewestSeatingFrame'));
 import ReLoginModal from './components/ReLoginModal';
 import { flushLoginPerf, markLoginPerf } from './utils/loginPerf';
+import { inferModuleFromScreen, trackUsageEvent } from './utils/usageTracking';
 
-const OverviewApp = lazy(() => import('./components/OverviewApp'));
-const ClassRosterApp = lazy(() => import('./components/ClassRosterApp'));
-const DistributionFlow = lazy(() => import('./components/DistributionFlow'));
-const MakeupTool = lazy(() => import('./components/MakeupTool'));
-const DailyReportApp = lazy(() => import('./components/DailyReportApp'));
+function lazyWithReload<T extends { default: React.ComponentType<any> }>(
+  loader: () => Promise<T>,
+) {
+  return lazy(async () => {
+    try {
+      const mod = await loader();
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('amber_lazy_reload_once');
+      }
+      return mod;
+    } catch (error) {
+      if (typeof window !== 'undefined') {
+        const message = error instanceof Error ? error.message : String(error);
+        const isChunkLoadError =
+          /Failed to fetch dynamically imported module/i.test(message)
+          || /Importing a module script failed/i.test(message)
+          || /ChunkLoadError/i.test(message);
+
+        if (isChunkLoadError && !sessionStorage.getItem('amber_lazy_reload_once')) {
+          sessionStorage.setItem('amber_lazy_reload_once', '1');
+          window.location.reload();
+          return await new Promise<T>(() => {});
+        }
+      }
+      throw error;
+    }
+  });
+}
+
+const OverviewApp = lazyWithReload(() => import('./components/OverviewApp'));
+const ClassRosterApp = lazyWithReload(() => import('./components/ClassRosterApp'));
+const DistributionFlow = lazyWithReload(() => import('./components/DistributionFlow'));
+const MakeupTool = lazyWithReload(() => import('./components/MakeupTool'));
+const DailyReportApp = lazyWithReload(() => import('./components/DailyReportApp'));
+const UsageInsightsApp = lazyWithReload(() => import('./components/UsageInsightsApp'));
 import type { AppScreen, ClassInfo } from './types';
 import { saveAppState, loadAppState } from './utils/appPersistence';
 
 const CLASS_CONTEXT_SCREENS: AppScreen[] = ['flow', 'seating', 'overview', 'daily-report', 'roster'];
 
+function isUsageInsightsEnabled() {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  return host === '127.0.0.1' || host === 'localhost' || host.includes('superamber-test');
+}
+
 function ScreenLoading() {
   return <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>加载中...</div>;
+}
+
+function normalizeClasses(raw: unknown): ClassInfo[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw.reduce<ClassInfo[]>((list, item) => {
+    if (!item || typeof item !== 'object') {
+      return list;
+    }
+
+    const data = item as Partial<ClassInfo>;
+    const name = String(data.name || '').trim();
+    if (!name) {
+      return list;
+    }
+
+    const normalized: ClassInfo = {
+      id: String(data.id || name),
+      name,
+    };
+
+    if (typeof data.squadId === 'string' && data.squadId.trim()) {
+      normalized.squadId = data.squadId;
+    }
+
+    list.push(normalized);
+    return list;
+  }, []);
 }
 
 function warmFeatureModules() {
@@ -30,6 +97,7 @@ function warmFeatureModules() {
 }
 
 export default function App() {
+  const usageInsightsEnabled = isUsageInsightsEnabled();
   const [screen, setScreen] = useState<AppScreen>('login');
   const [teacherName, setTeacherName] = useState('');
   const [classes, setClasses] = useState<ClassInfo[]>([]);
@@ -37,22 +105,111 @@ export default function App() {
   const [restored, setRestored] = useState(false);
   const [showReLogin, setShowReLogin] = useState(false);
 
-  // Restore persisted state on mount
   useEffect(() => {
-    const saved = loadAppState();
-    if (saved && saved.teacherName && saved.classes.length > 0) {
-      setTeacherName(saved.teacherName);
-      setClasses(saved.classes);
-      setSelectedClass(saved.selectedClass);
-      // If they had a class selected, go back to hub; otherwise welcome
-      // Don't restore directly to flow/seating/overview — those need fresh data
-      if (saved.selectedClass) {
-        setScreen('hub');
-      } else {
-        setScreen('welcome');
+    let cancelled = false;
+
+    async function bootstrapSession() {
+      const saved = loadAppState();
+      const savedTeacherName = String(saved?.teacherName || '').trim();
+      const savedClasses = normalizeClasses(saved?.classes || []);
+      const savedSelectedClassName = String(saved?.selectedClass?.name || '').trim();
+
+      if (savedTeacherName) {
+        setTeacherName(savedTeacherName);
+      }
+
+      const restoreSavedState = () => {
+        if (!savedTeacherName || savedClasses.length === 0) {
+          return false;
+        }
+
+        setTeacherName(savedTeacherName);
+        setClasses(savedClasses);
+        const restoredSelectedClass = savedSelectedClassName
+          ? savedClasses.find((item) => item.name === savedSelectedClassName) || null
+          : null;
+        setSelectedClass(restoredSelectedClass);
+        setScreen(restoredSelectedClass ? 'hub' : 'welcome');
+        return true;
+      };
+
+      try {
+        const healthResp = await fetch('/api/health', {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        const healthData = await healthResp.json().catch(() => ({} as Record<string, unknown>));
+
+        if (cancelled) {
+          return;
+        }
+
+        const backendTeacherName = String(healthData.username || '').trim();
+        if (backendTeacherName) {
+          setTeacherName(backendTeacherName);
+          localStorage.setItem('amber_username', backendTeacherName);
+        }
+
+        if (!healthResp.ok || !healthData.loggedIn) {
+          // Backend session lost (e.g. service restart) — restore from saved state if available
+          if (restoreSavedState()) {
+            return;
+          }
+          setClasses([]);
+          setSelectedClass(null);
+          setScreen('login');
+          return;
+        }
+
+        // Use saved classes immediately to avoid slow getClassMap refresh
+        if (restoreSavedState()) {
+          return;
+        }
+
+        // No saved state — need to fetch classes from backend
+        const classResp = await fetch('/api/scraper/get-classes', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const classData = await classResp.json().catch(() => ({} as Record<string, unknown>));
+
+        if (cancelled) {
+          return;
+        }
+
+        const liveClasses = normalizeClasses((classData as { data?: unknown }).data);
+        if (classResp.ok && liveClasses.length > 0) {
+          setClasses(liveClasses);
+          const restoredSelectedClass = savedSelectedClassName
+            ? liveClasses.find((item) => item.name === savedSelectedClassName) || null
+            : null;
+          setSelectedClass(restoredSelectedClass);
+          setScreen(restoredSelectedClass ? 'hub' : 'welcome');
+          return;
+        }
+
+        setClasses([]);
+        setSelectedClass(null);
+        setScreen('login');
+      } catch {
+        if (!cancelled && !restoreSavedState()) {
+          setClasses([]);
+          setSelectedClass(null);
+          setScreen('login');
+        }
+      } finally {
+        if (!cancelled) {
+          setRestored(true);
+        }
       }
     }
-    setRestored(true);
+
+    void bootstrapSession();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Persist state on changes (after initial restore)
@@ -63,30 +220,28 @@ export default function App() {
 
   useEffect(() => { persist(); }, [persist]);
 
+  // Modules load on demand when needed — no eager warmup
+
   useEffect(() => {
-    if (classes.length === 0) {
-      return;
-    }
+    if (!restored) return;
+    const moduleName = inferModuleFromScreen(screen);
+    if (!moduleName) return;
+    void trackUsageEvent({
+      event: 'screen_view',
+      module: moduleName,
+      screen,
+      teacherName,
+      className: selectedClass?.name || '',
+    });
+  }, [restored, screen, teacherName, selectedClass?.name]);
 
-    void warmFeatureModules();
-
-    const scheduleWarmup = () => {
-      void import('xlsx');
-    };
-
-    if ('requestIdleCallback' in window) {
-      const idleId = window.requestIdleCallback(scheduleWarmup, { timeout: 1200 });
-      return () => {
-        window.cancelIdleCallback(idleId);
-      };
-    }
-
-    const timer = globalThis.setTimeout(scheduleWarmup, 900);
-
-    return () => {
-      globalThis.clearTimeout(timer);
-    };
-  }, [classes.length]);
+  useEffect(() => {
+    if (usageInsightsEnabled) return;
+    if (screen !== 'usage-insights') return;
+    startTransition(() => {
+      setScreen('welcome');
+    });
+  }, [screen, usageInsightsEnabled]);
 
   function handleLogin(name: string, classList: ClassInfo[]) {
     markLoginPerf('app_handle_login', { classCount: classList.length });
@@ -117,6 +272,13 @@ export default function App() {
   }, [screen, classes.length]);
 
   function handleSelectClass(cls: ClassInfo) {
+    void trackUsageEvent({
+      event: 'select_class',
+      module: 'class-hub',
+      teacherName,
+      className: cls.name,
+      screen: 'hub',
+    });
     startTransition(() => {
       setSelectedClass(cls);
       setScreen('hub');
@@ -124,7 +286,17 @@ export default function App() {
   }
 
   function handleNavigate(target: AppScreen) {
+    if (target === 'usage-insights' && !usageInsightsEnabled) {
+      return;
+    }
     startTransition(() => {
+      setScreen(target);
+    });
+  }
+
+  function handleOpenTodoTarget(cls: ClassInfo, target: Extract<AppScreen, 'hub' | 'seating' | 'overview' | 'flow'>) {
+    startTransition(() => {
+      setSelectedClass(cls);
       setScreen(target);
     });
   }
@@ -197,6 +369,7 @@ export default function App() {
           onSelectClass={handleSelectClass}
           onLogout={handleLogout}
           onNavigate={handleNavigate}
+          onOpenTodoTarget={handleOpenTodoTarget}
         />
       )}
       {screen === 'roster' && (
@@ -206,7 +379,13 @@ export default function App() {
             classInfo={selectedClass}
             knownClasses={classes}
             onBack={selectedClass ? handleBackToHub : handleBackToWelcome}
+            onSessionExpired={handleSessionExpired}
           />
+        </Suspense>
+      )}
+      {screen === 'usage-insights' && usageInsightsEnabled && (
+        <Suspense fallback={<ScreenLoading />}>
+          <UsageInsightsApp onBack={handleBackToWelcome} />
         </Suspense>
       )}
       {screen === 'hub' && selectedClass && (
@@ -226,12 +405,14 @@ export default function App() {
           />
         </Suspense>
       )}
-      {selectedClass && (screen === 'hub' || screen === 'seating') && (
-        <NewestSeatingFrame
-          classCode={selectedClass.name}
-          onBack={handleBackToHub}
-          active={screen === 'seating'}
-        />
+      {selectedClass && screen === 'seating' && (
+        <Suspense fallback={<ScreenLoading />}>
+          <NewestSeatingFrame
+            classCode={selectedClass.name}
+            onBack={handleBackToHub}
+            active
+          />
+        </Suspense>
       )}
       {screen === 'overview' && selectedClass && (
         <Suspense fallback={<ScreenLoading />}>

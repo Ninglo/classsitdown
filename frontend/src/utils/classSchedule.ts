@@ -10,7 +10,7 @@ export interface ClassScheduleDetail {
 }
 
 const STORAGE_KEY = 'amber_weekly_schedule';
-const SEATING_STORAGE_KEY = 'classSeatingData';
+const SEATING_STORAGE_KEYS = ['superamberClassData', 'classSeatingData'] as const;
 
 export const ALL_DAYS: DayOfWeek[] = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
@@ -35,6 +35,18 @@ function cachedRead<T>(key: string): T | null {
     _cache.set(key, null);
     return null;
   }
+}
+
+function loadMergedSeatingData<T extends Record<string, unknown>>(): T | null {
+  const merged: Record<string, unknown> = {};
+
+  for (const key of [...SEATING_STORAGE_KEYS].reverse()) {
+    const parsed = cachedRead<T>(key);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+    Object.assign(merged, parsed);
+  }
+
+  return Object.keys(merged).length > 0 ? merged as T : null;
 }
 
 const DAY_ORDER: Record<DayOfWeek, number> = {
@@ -176,7 +188,7 @@ type SeatingData = Record<string, {
 
 function loadSeatingSchedule(): WeeklySchedule {
   try {
-    const parsed = cachedRead<SeatingData>(SEATING_STORAGE_KEY);
+    const parsed = loadMergedSeatingData<SeatingData>();
     if (!parsed) return {};
 
     const schedule: WeeklySchedule = {};
@@ -216,7 +228,7 @@ function loadSeatingSchedule(): WeeklySchedule {
 
 function loadSeatingDetails(): ClassScheduleDetail[] {
   try {
-    const parsed = cachedRead<SeatingData>(SEATING_STORAGE_KEY);
+    const parsed = loadMergedSeatingData<SeatingData>();
     if (!parsed) return [];
 
     const details: ClassScheduleDetail[] = [];

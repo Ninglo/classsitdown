@@ -286,6 +286,62 @@ class EducationSystemScraper {
     return unique;
   }
 
+  async extractClassMapViaBrowser() {
+    await this.ensurePageReady();
+    await this.page.goto(`${this.baseUrl}/admin`, { waitUntil: 'networkidle2', timeout: 15000 });
+    // Wait for squad_console links instead of fixed 1.2s sleep
+    try {
+      await this.page.waitForSelector('a[href*="squad_console"]', { timeout: 3000 });
+    } catch {
+      // Links didn't appear in time, proceed anyway
+    }
+
+    const entries = await this.page.evaluate(() => {
+      const normalize = (text) => (text || '').replace(/\s+/g, ' ').trim();
+      const codePattern = /\b([A-Z]{1,3}\d{2,4})\b/i;
+      const rows = [];
+
+      const collectCandidate = (href = '', text = '') => {
+        if (!href) return null;
+        const full = href.startsWith('http') ? href : new URL(href, window.location.origin).toString();
+        const url = new URL(full);
+        const squadId = url.searchParams.get('id') || url.searchParams.get('squad_id');
+        if (!squadId) return null;
+
+        const hit = normalize(text).match(codePattern);
+        if (!hit?.[1]) return null;
+        return { classCode: hit[1].toUpperCase(), squadId: String(squadId) };
+      };
+
+      const links = Array.from(document.querySelectorAll('a[href]'));
+      for (const link of links) {
+        const href = link.getAttribute('href') || '';
+        const texts = [
+          normalize(link.textContent),
+          normalize(link.parentElement?.textContent),
+          normalize(link.closest('.small-box, .box, .panel, .col-md-3, .col-sm-3, .col-xs-6, li, tr')?.textContent),
+        ].filter(Boolean);
+
+        for (const text of texts) {
+          const entry = collectCandidate(href, text);
+          if (entry) {
+            rows.push(entry);
+            break;
+          }
+        }
+      }
+
+      const dedup = new Map();
+      for (const row of rows) {
+        dedup.set(`${row.classCode}_${row.squadId}`, row);
+      }
+
+      return Array.from(dedup.values());
+    });
+
+    return Array.isArray(entries) ? entries : [];
+  }
+
   getPuppeteerCookies() {
     const hostname = new URL(this.baseUrl).hostname;
     return Array.from(this.cookieJar.values()).map((cookie) => ({
@@ -348,18 +404,41 @@ class EducationSystemScraper {
       throw new Error('登录状态已失效，请重新登录');
     }
 
-    const map = this.extractClassMapFromHtml(text);
+    let map = this.extractClassMapFromHtml(text);
     const parsedAt = performance.now();
+
+    if (map.length === 0) {
+      try {
+        const browserStartedAt = performance.now();
+        const browserMap = await this.extractClassMapViaBrowser();
+        const browserFinishedAt = performance.now();
+        if (browserMap.length > 0) {
+          map = browserMap;
+          this.lastClassMapTiming = {
+            cacheHit: false,
+            fetchMs: Number((fetchedAt - startedAt).toFixed(1)),
+            parseMs: Number((parsedAt - fetchedAt).toFixed(1)),
+            totalMs: Number((browserFinishedAt - startedAt).toFixed(1)),
+            browserFallbackMs: Number((browserFinishedAt - browserStartedAt).toFixed(1)),
+            classCount: map.length,
+          };
+        }
+      } catch (error) {
+        console.warn('⚠️ 班级静态解析为空，浏览器兜底也失败:', error.message);
+      }
+    }
 
     this.classMapCache = map;
     this.classMapCacheAt = Date.now();
-    this.lastClassMapTiming = {
-      cacheHit: false,
-      fetchMs: Number((fetchedAt - startedAt).toFixed(1)),
-      parseMs: Number((parsedAt - fetchedAt).toFixed(1)),
-      totalMs: Number((parsedAt - startedAt).toFixed(1)),
-      classCount: map.length,
-    };
+    if (!this.lastClassMapTiming || this.lastClassMapTiming.classCount !== map.length) {
+      this.lastClassMapTiming = {
+        cacheHit: false,
+        fetchMs: Number((fetchedAt - startedAt).toFixed(1)),
+        parseMs: Number((parsedAt - fetchedAt).toFixed(1)),
+        totalMs: Number((parsedAt - startedAt).toFixed(1)),
+        classCount: map.length,
+      };
+    }
     return map;
   }
 

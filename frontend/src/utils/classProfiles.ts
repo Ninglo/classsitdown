@@ -1,6 +1,7 @@
 import type { ClassProfile, StudentInfo } from '../types';
 
 const STORAGE_KEY = 'amber_class_profiles';
+const SEATING_STORAGE_KEYS = ['superamberClassData', 'classSeatingData'] as const;
 
 const STUDENT_NOISE_PATTERNS: RegExp[] = [
   /^[:：\d\s.()（）\-_/\\]+$/,
@@ -61,6 +62,41 @@ export function sortStudentNames(names: string[]): string[] {
 
 function sortStudents(students: StudentInfo[]): StudentInfo[] {
   return [...students].sort((a, b) => compareStudentNames(a.chineseName, b.chineseName));
+}
+
+function normalizeAliasKey(raw: unknown): string {
+  return normalizeStudentName(raw).toLowerCase();
+}
+
+function buildCanonicalNameMap(students: StudentInfo[]): Map<string, string> {
+  const aliases = new Map<string, string>();
+
+  for (const student of students) {
+    const canonical = normalizeStudentName(student.chineseName);
+    if (!canonical) continue;
+
+    aliases.set(normalizeAliasKey(canonical), canonical);
+
+    const englishName = normalizeStudentName(student.englishName || '');
+    if (englishName) {
+      aliases.set(normalizeAliasKey(englishName), canonical);
+    }
+
+    for (const alias of student.aliases || []) {
+      const normalized = normalizeStudentName(alias);
+      if (normalized) {
+        aliases.set(normalizeAliasKey(normalized), canonical);
+      }
+    }
+  }
+
+  return aliases;
+}
+
+function canonicalizeStudentName(name: string, aliases: Map<string, string>): string {
+  const normalized = normalizeStudentName(name);
+  if (!normalized) return '';
+  return aliases.get(normalizeAliasKey(normalized)) || normalized;
 }
 
 export function getClassProfile(classCode: string): ClassProfile | null {
@@ -162,14 +198,33 @@ function collectNamesFromArcGroups(arcGroups: unknown): string[] {
   return rows.flatMap((row) => collectNamesFromGroups(row));
 }
 
+type SeatingDataMap = Record<string, unknown>;
+
+function loadMergedSeatingData(): SeatingDataMap {
+  const merged: SeatingDataMap = {};
+
+  for (const key of [...SEATING_STORAGE_KEYS].reverse()) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as SeatingDataMap;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+      Object.assign(merged, parsed);
+    } catch {
+      // Ignore invalid storage payloads and continue with other known keys.
+    }
+  }
+
+  return merged;
+}
+
 export function getStudentsFromSeating(classCode: string): StudentInfo[] {
   try {
-    const raw = localStorage.getItem('classSeatingData');
-    if (!raw) return [];
-    const data = JSON.parse(raw) as Record<string, {
+    const data = loadMergedSeatingData() as Record<string, {
       weekday?: { groups?: unknown; rowGroups?: unknown; arcGroups?: unknown };
       weekend?: { groups?: unknown; rowGroups?: unknown; arcGroups?: unknown };
     }>;
+    if (Object.keys(data).length === 0) return [];
     const matchedKey = resolveSeatingKey(classCode);
     if (!matchedKey) return [];
 
@@ -199,10 +254,11 @@ export function getResolvedStudents(classCode: string): StudentInfo[] {
   const profileStudents = sortStudents((getClassProfile(classCode)?.students ?? []).filter((student) =>
     isLikelyStudentName(student.chineseName),
   ));
+  const canonicalNames = buildCanonicalNameMap(profileStudents);
   const mergedNames = new Map<string, StudentInfo>();
 
   for (const student of [...profileStudents, ...getStudentsFromSeating(classCode), ...getStudentsFromSeatingData(classCode)]) {
-    const cleanName = normalizeStudentName(student.chineseName);
+    const cleanName = canonicalizeStudentName(student.chineseName, canonicalNames);
     if (!isLikelyStudentName(cleanName)) continue;
 
     const existing = mergedNames.get(cleanName);
@@ -280,9 +336,8 @@ function collectNamesFromValue(value: unknown, names: Set<string>): void {
 
 export function getStudentsFromSeatingData(classCode: string): StudentInfo[] {
   try {
-    const raw = localStorage.getItem('classSeatingData');
-    if (!raw) return [];
-    const all = JSON.parse(raw) as Record<string, unknown>;
+    const all = loadMergedSeatingData();
+    if (Object.keys(all).length === 0) return [];
     const resolvedKey = Object.keys(all).find((key) => key.toUpperCase() === classCode.toUpperCase());
     if (!resolvedKey) return [];
 
@@ -366,14 +421,16 @@ export function listKnownClassCodes(classCodes: string[] = []): string[] {
   for (const profile of loadClassProfiles()) {
     known.add(normalizeClassCode(profile.classCode));
   }
+  for (const classCode of Object.keys(loadMergedSeatingData())) {
+    known.add(normalizeClassCode(classCode));
+  }
   return [...known].filter(Boolean).sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
 }
 
 export function hasSeatingData(classCode: string): boolean {
   try {
-    const raw = localStorage.getItem('classSeatingData');
-    if (!raw) return false;
-    const data = JSON.parse(raw) as Record<string, unknown>;
+    const data = loadMergedSeatingData();
+    if (Object.keys(data).length === 0) return false;
     // Case-insensitive match: scraper uppercases class codes, but seating app
     // may store them in original case from user input
     const upper = classCode.toUpperCase();
@@ -386,9 +443,8 @@ export function hasSeatingData(classCode: string): boolean {
 /** Find the actual key used in classSeatingData for a given class code (case-insensitive) */
 export function resolveSeatingKey(classCode: string): string | null {
   try {
-    const raw = localStorage.getItem('classSeatingData');
-    if (!raw) return null;
-    const data = JSON.parse(raw) as Record<string, unknown>;
+    const data = loadMergedSeatingData();
+    if (Object.keys(data).length === 0) return null;
     const upper = classCode.toUpperCase();
     return Object.keys(data).find((key) => key.toUpperCase() === upper) ?? null;
   } catch {

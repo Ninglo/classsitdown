@@ -77,7 +77,7 @@ export interface QuickParseResult {
   classCode: string | null;
   missedDay: string | null;
   missedOccId: string | null;
-  makeupRequests: { day: string; time: string; mode: 'exact' | 'after' | 'before'; raw: string }[];
+  makeupRequests: { day: string; time: string; endTime?: string; mode: 'exact' | 'after' | 'before' | 'range'; raw: string }[];
   makeupPairs: { day: string; time: string }[];
   makeupDaysOnly: string[];
   weekTag: string | null;

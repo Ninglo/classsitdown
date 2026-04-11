@@ -20,6 +20,24 @@ export default function Login({ onLogin }: Props) {
     localStorage.removeItem('amber_password');
   }, []);
 
+  async function fetchClassesFromSession(): Promise<ClassInfo[]> {
+    const resp = await fetch('/api/scraper/get-classes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await resp.json().catch(() => ({} as Record<string, unknown>));
+    if (!resp.ok) {
+      throw new Error((data as { error?: string }).error || '班级列表获取失败');
+    }
+
+    return (((data as { data?: ClassInfo[] }).data) || []).map((c) => ({
+      id: c.id || c.name,
+      name: c.name,
+      squadId: c.squadId,
+    }));
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!username.trim() || !password.trim()) {
@@ -66,11 +84,15 @@ export default function Login({ onLogin }: Props) {
         throw new Error((loginData.error as string) || '登录失败，请检查账号密码');
       }
 
-      const classes: ClassInfo[] = ((loginData.classes as ClassInfo[]) || []).map((c) => ({
+      let classes: ClassInfo[] = ((loginData.classes as ClassInfo[]) || []).map((c) => ({
         id: c.id || c.name,
         name: c.name,
         squadId: c.squadId,
       }));
+
+      if (classes.length === 0) {
+        classes = await fetchClassesFromSession();
+      }
 
       setLoadingMsg(`登录成功，已获取 ${classes.length} 个班级`);
       localStorage.setItem('amber_username', username.trim());

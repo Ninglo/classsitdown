@@ -43,6 +43,8 @@ function isWithinFuzzyWindow(baseTime: string, targetTime: string, tolerance = 5
   return Math.abs(baseMinutes - targetMinutes) <= tolerance;
 }
 
+const SLOT_BOUNDARY_TOLERANCE_MINUTES = 15;
+
 export default function MakeupTool({ onBack }: Props) {
   // Multi-stage
   const [activeStage, setActiveStage] = useState<StageKey>(() => loadMultiStageStore().activeStage);
@@ -209,15 +211,31 @@ export default function MakeupTool({ onBack }: Props) {
     setActiveCandidate(null);
   }
 
-  function applyRequestedSlot(day: string, time: string, mode: 'exact' | 'after' | 'before', availableKeys: string[]): string[] {
+  function applyRequestedSlot(
+    day: string,
+    time: string,
+    mode: 'exact' | 'after' | 'before' | 'range',
+    availableKeys: string[],
+    endTime?: string,
+  ): string[] {
     const dayKeys = availableKeys.filter((slotKey) => slotKey.startsWith(`${day}|`));
     const targetMinutes = timeToMinutes(time);
     if (targetMinutes == null) return [];
+    if (mode === 'range') {
+      const endMinutes = timeToMinutes(endTime || '');
+      if (endMinutes == null) return [];
+      const minMinutes = Math.min(targetMinutes, endMinutes) - SLOT_BOUNDARY_TOLERANCE_MINUTES;
+      const maxMinutes = Math.max(targetMinutes, endMinutes) + SLOT_BOUNDARY_TOLERANCE_MINUTES;
+      return dayKeys.filter((slotKey) => {
+        const slotMinutes = timeToMinutes(slotKey.split('|')[1]);
+        return slotMinutes != null && slotMinutes >= minMinutes && slotMinutes <= maxMinutes;
+      });
+    }
     if (mode === 'after') {
-      return dayKeys.filter((slotKey) => (timeToMinutes(slotKey.split('|')[1]) ?? -1) >= targetMinutes);
+      return dayKeys.filter((slotKey) => (timeToMinutes(slotKey.split('|')[1]) ?? -1) >= targetMinutes - SLOT_BOUNDARY_TOLERANCE_MINUTES);
     }
     if (mode === 'before') {
-      return dayKeys.filter((slotKey) => (timeToMinutes(slotKey.split('|')[1]) ?? 9999) <= targetMinutes);
+      return dayKeys.filter((slotKey) => (timeToMinutes(slotKey.split('|')[1]) ?? 9999) <= targetMinutes + SLOT_BOUNDARY_TOLERANCE_MINUTES);
     }
     const exact = dayKeys.find((slotKey) => slotKey.endsWith(`|${time}`));
     if (exact) return [exact];
@@ -244,7 +262,7 @@ export default function MakeupTool({ onBack }: Props) {
       if (!orderedSlots.includes(slotKey)) orderedSlots.push(slotKey);
     };
     for (const req of result.makeupRequests) {
-      for (const slotKey of applyRequestedSlot(req.day, req.time, req.mode, availableSlotKeys)) {
+      for (const slotKey of applyRequestedSlot(req.day, req.time, req.mode, availableSlotKeys, req.endTime)) {
         pushSlot(slotKey);
       }
     }

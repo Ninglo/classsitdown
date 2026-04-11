@@ -1,0 +1,98 @@
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEK1_START = '2026-03-02';
+
+const toLocalDateKey = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const fromDateKey = (dateKey: string): Date | null => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+    return null;
+  }
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date;
+};
+
+const weekdayMap = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+
+export const formatTodayLabel = (now = new Date()): string => {
+  return `${now.getMonth() + 1}月${now.getDate()}日`;
+};
+
+export const getChineseWeekday = (now = new Date()): string => {
+  return weekdayMap[now.getDay()] ?? '';
+};
+
+export const getWeekNumber = (now = new Date()): number => {
+  const start = fromDateKey(WEEK1_START);
+  if (!start) {
+    return 1;
+  }
+
+  const todayKey = toLocalDateKey(now);
+  const today = fromDateKey(todayKey);
+  if (!today) {
+    return 1;
+  }
+
+  const offset = Math.floor((today.getTime() - start.getTime()) / DAY_MS);
+  return Math.max(1, Math.floor(offset / 7) + 1);
+};
+
+export const addDays = (dateKey: string, days: number): string | null => {
+  const date = fromDateKey(dateKey);
+  if (!date) {
+    return null;
+  }
+
+  date.setDate(date.getDate() + days);
+  return toLocalDateKey(date);
+};
+
+export const monthDayToDateKey = (month: string, day: string): string | null => {
+  const monthNum = Number.parseInt(month, 10);
+  const dayNum = Number.parseInt(day, 10);
+  if (!Number.isFinite(monthNum) || !Number.isFinite(dayNum)) {
+    return null;
+  }
+  if (monthNum < 1 || monthNum > 12 || dayNum < 1 || dayNum > 31) {
+    return null;
+  }
+
+  const year = 2026;
+  const date = new Date(year, monthNum - 1, dayNum);
+  if (date.getMonth() !== monthNum - 1 || date.getDate() !== dayNum) {
+    return null;
+  }
+
+  return toLocalDateKey(date);
+};
+
+export const dateKeyToMonthDay = (dateKey: string): { month: string; day: string; weekday: string } | null => {
+  const date = fromDateKey(dateKey);
+  if (!date) {
+    return null;
+  }
+
+  return {
+    month: String(date.getMonth() + 1),
+    day: String(date.getDate()),
+    weekday: weekdayMap[date.getDay()] ?? ''
+  };
+};
+
+export const parseDateFromClassTime = (classTime: string): string | null => {
+  const match = classTime.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+  if (!match) {
+    return null;
+  }
+
+  return monthDayToDateKey(match[1], match[2]);
+};

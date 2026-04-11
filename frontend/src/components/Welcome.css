@@ -56,6 +56,147 @@
   gap: 22px;
 }
 
+.welcome-todo-area {
+  position: fixed;
+  right: 20px;
+  top: 18px;
+  width: 300px;
+  max-height: calc(100dvh - 36px);
+  overflow-y: auto;
+  z-index: 50;
+}
+
+.welcome-todo-panel {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: linear-gradient(180deg, rgba(254,252,247,0.97) 0%, rgba(247,250,241,0.97) 100%);
+  border: 1.5px solid rgba(123,168,98,0.2);
+  border-radius: 18px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+}
+
+.welcome-todo-header,
+.welcome-todo-block-title,
+.welcome-todo-item-top,
+.welcome-todo-actions,
+.welcome-todo-switch {
+  display: flex;
+  align-items: center;
+}
+
+.welcome-todo-header,
+.welcome-todo-block-title,
+.welcome-todo-item-top {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.welcome-todo-kicker {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--green);
+  font-weight: 700;
+}
+
+.welcome-todo-header h2 {
+  margin: 4px 0 0;
+  font-size: 22px;
+  color: var(--gray-900);
+}
+
+.welcome-todo-switch {
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(123,168,98,0.12);
+  color: var(--green-dark);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.welcome-todo-weekly,
+.welcome-todo-list-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.72);
+  border: 1px solid rgba(123,168,98,0.16);
+}
+
+.welcome-todo-block-title strong {
+  font-size: 15px;
+  color: var(--gray-800);
+}
+
+.welcome-todo-block-title span,
+.welcome-todo-weekly-copy,
+.welcome-todo-item-detail,
+.welcome-todo-empty {
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+.welcome-todo-weekly-copy {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.welcome-todo-weekly select,
+.welcome-todo-weekly textarea {
+  width: 100%;
+  border: 1px solid rgba(123,168,98,0.22);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(255,255,255,0.92);
+  font: inherit;
+}
+
+.welcome-todo-weekly textarea {
+  min-height: 86px;
+  resize: vertical;
+}
+
+.welcome-todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.welcome-todo-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(123,168,98,0.16);
+  background: rgba(255,255,255,0.92);
+}
+
+.welcome-todo-item.is-done {
+  opacity: 0.58;
+}
+
+.welcome-todo-item-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--gray-900);
+  line-height: 1.5;
+}
+
+.welcome-todo-actions {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.welcome-todo-empty {
+  line-height: 1.6;
+}
+
 .section-title {
   display: flex;
   align-items: center;
@@ -465,8 +606,23 @@
   background: rgba(255,255,255,0.7);
 }
 
+.batch-fetch-status {
+  font-size: 13px;
+  color: var(--green-dark);
+  font-weight: 500;
+  margin-top: 2px;
+}
+
 /* ── Mobile ── */
 @media (max-width: 640px) {
+  .welcome-todo-area {
+    position: static;
+    width: 100%;
+    max-height: none;
+    right: auto;
+    top: auto;
+  }
+
   .welcome-wrap {
     padding: 20px 16px 40px;
   }
