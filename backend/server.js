@@ -1449,6 +1449,7 @@ app.post('/api/reports/class-daily-report', async (req, res) => {
       reportMode = 'standard',
       studentFile,
       checkinFile,
+      minCheckinDays,
     } = req.body || {};
 
     const normalizedMode = reportMode === 'detail' ? 'detail' : 'standard';
@@ -1478,6 +1479,10 @@ app.post('/api/reports/class-daily-report', async (req, res) => {
     }
     if (!hasCheckinFile) {
       args.push('--no-checkin');
+    }
+    const parsedMinCheckin = parseInt(minCheckinDays, 10);
+    if (!isNaN(parsedMinCheckin) && parsedMinCheckin >= 0) {
+      args.push('--min-checkin', String(parsedMinCheckin));
     }
 
     const outputPath = await runPythonReport(scriptPath, args, tempDir);
@@ -1581,12 +1586,15 @@ app.post('/api/tencent-ocr', async (req, res) => {
       body: payload,
     });
 
-    const ocrData = await ocrRes.json().catch(() => ({}));
+    const ocrRawText = await ocrRes.text();
+    let ocrData;
+    try { ocrData = JSON.parse(ocrRawText); } catch { ocrData = {}; }
+    console.log('🔍 腾讯OCR HTTP状态:', ocrRes.status, '响应长度:', ocrRawText.length);
     const response = ocrData.Response || {};
 
     if (response.Error) {
       console.error('❌ 腾讯OCR错误:', response.Error.Code, response.Error.Message);
-      return res.status(502).json({ error: `OCR错误: ${response.Error.Message}` });
+      return res.status(502).json({ error: `OCR错误: ${response.Error.Message} (${response.Error.Code})` });
     }
 
     const textDetections = response.TextDetections || [];

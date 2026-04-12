@@ -72,6 +72,7 @@ export default function DailyReportApp({ classInfo, classes, onBack, onBackToHom
   const [className, setClassName] = useState('');
   const [studentFile, setStudentFile] = useState<UploadedFileState>({ file: null, name: '' });
   const [checkinFile, setCheckinFile] = useState<UploadedFileState>({ file: null, name: '' });
+  const [minCheckinDays, setMinCheckinDays] = useState(2);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -128,6 +129,7 @@ export default function DailyReportApp({ classInfo, classes, onBack, onBackToHom
         body: JSON.stringify({
           className: className.trim(),
           reportMode,
+          minCheckinDays,
           studentFile: {
             name: studentFile.file.name,
             content: studentContent,
@@ -182,7 +184,7 @@ export default function DailyReportApp({ classInfo, classes, onBack, onBackToHom
           <h2 className="dr-hero-title">这里生成的是班级群实际要发的那套 Excel 日报</h2>
           <p className="dr-hero-text">
             上传两份源表后，直接输出和 RemoteLab 里一致的成品文件。
-            标准版会生成“完成公示 + 质量分析”，明细版会生成按分数展示的公示表。
+            标准版会生成"完成公示 + 质量分析"，明细版会生成按分数展示的公示表。
           </p>
         </div>
 
@@ -212,6 +214,23 @@ export default function DailyReportApp({ classInfo, classes, onBack, onBackToHom
             onChange={(event) => setClassName(event.target.value)}
             placeholder="留空则从学生个人数据文件名识别"
           />
+        </div>
+
+        <div className="dr-panel">
+          <label className="dr-field-label" htmlFor="daily-report-min-checkin">最少打卡天数</label>
+          <input
+            id="daily-report-min-checkin"
+            className="dr-input"
+            type="number"
+            min={0}
+            max={31}
+            value={minCheckinDays}
+            onChange={(event) => {
+              const v = parseInt(event.target.value, 10);
+              if (!isNaN(v) && v >= 0) setMinCheckinDays(v);
+            }}
+          />
+          <div className="dr-field-hint">低于此天数的学生会被标记为打卡不足，默认 2 天</div>
         </div>
 
         <div className="dr-upload-grid">
