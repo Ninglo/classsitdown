@@ -158,13 +158,13 @@ export default function DailyReportApp({ classInfo, classes, onBack, onBackToHom
 
   return (
     <div className="dr-wrap fade-in">
-      {onBackToHome && (
-        <button className="tool-home-rail" onClick={onBackToHome}>
-          <span className="tool-home-rail-icon">←</span>
-          <span>返回主页</span>
-        </button>
-      )}
       <div className="dr-topbar">
+        {onBackToHome && (
+          <button className="tool-home-rail dr-home-inline" onClick={onBackToHome}>
+            <span className="tool-home-rail-icon">←</span>
+            <span>返回主页</span>
+          </button>
+        )}
         <button className="tool-back-btn" onClick={onBack}>← 返回</button>
         {classes && classes.length > 1 && onSwitchClass ? (
           <select className="tool-class-switch" value={classInfo.name} onChange={(e) => onSwitchClass(e.target.value)}>

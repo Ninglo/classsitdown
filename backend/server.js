@@ -627,6 +627,108 @@ app.post('/api/cnf-roster', async (req, res) => {
   }
 });
 
+// ── 探测 cop_mip 发放接口（临时调试用）────────────────────────────────────────
+app.post('/api/debug/probe-copmip', async (req, res) => {
+  try {
+    const session = requireLoggedInSession(req, res);
+    if (!session) return;
+    const { classId } = req.body || {};
+    const { squadId } = await session.scraper.resolveSquadId(String(classId || 'J342'));
+    const results = {};
+
+    // 1. 抓取 squad_console 页面找 cop_mip 相关链接和表单
+    const { text: consoleHtml } = await session.scraper.requestText(
+      `/admin/squad_console?id=${squadId}&type=offline`,
+      { headers: { accept: 'text/html' } }
+    );
+    const copMipUrls = [...new Set((consoleHtml.match(/cop_mip[^"'\s)}<]*/g) || []))];
+    const formActions = [...new Set((consoleHtml.match(/action="([^"]+)"/g) || []))];
+    const ajaxUrls = [...new Set((consoleHtml.match(/['"]\/admin\/[^'"]*cop_mip[^'"]*['"]/g) || []))];
+    results.consolePageUrls = { copMipUrls, formActions, ajaxUrls };
+
+    // 2. 找 JS 文件中的 cop_mip 接口
+    const scriptSrcs = consoleHtml.match(/src="([^"]*\.js[^"]*)"/g) || [];
+    results.scriptCount = scriptSrcs.length;
+
+    // 3. 尝试获取 cop_mip 页面（如果有独立页面）
+    const copMipPages = [
+      `/admin/squad/cop_mip?squad_id=${squadId}`,
+      `/admin/squad/cop_mip/index?squad_id=${squadId}`,
+      `/admin/squad/cop_mip/manage?squad_id=${squadId}&squad_type=offline`,
+      `/admin/squad/cop_mip/create?squad_id=${squadId}`,
+      `/admin/squad/cop_mip/sendMip`,
+    ];
+    results.pageProbes = {};
+    for (const page of copMipPages) {
+      try {
+        const resp = await session.scraper.request(page, {
+          headers: { accept: 'text/html,application/json' },
+          redirect: 'manual',
+        });
+        const status = resp.status;
+        const body = await resp.text().catch(() => '');
+        const hasForm = body.includes('<form') || body.includes('store');
+        const inputs = (body.match(/<input[^>]*name="([^"]+)"/g) || []).slice(0, 10);
+        const storeUrls = [...new Set((body.match(/store[^"'\s)}<]*/g) || []).slice(0, 5))];
+        results.pageProbes[page] = { status, hasForm, inputs, storeUrls, bodyLen: body.length, preview: body.slice(0, 300) };
+      } catch (e) {
+        results.pageProbes[page] = { error: e.message };
+      }
+    }
+
+    // 4. 尝试 cop_mip POST 接口
+    const xsrfCookie = session.scraper.getDecodedCookieValue('XSRF-TOKEN');
+    const csrfToken = session.scraper.extractLoginToken(consoleHtml);
+    const postEndpoints = [
+      { url: '/admin/squad/cop_mip/sendMip', data: { squad_id: squadId, student_no: '20240001', amount: 0, _token: csrfToken } },
+      { url: '/admin/squad/cop_mip/store', data: { squad_id: squadId, _token: csrfToken } },
+      { url: '/admin/squad/cop_mip/send', data: { squad_id: squadId, _token: csrfToken } },
+    ];
+    results.postProbes = {};
+    for (const { url, data } of postEndpoints) {
+      try {
+        const resp = await session.scraper.request(url, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/x-www-form-urlencoded',
+            accept: 'application/json, text/html',
+            ...(xsrfCookie ? { 'x-xsrf-token': xsrfCookie } : {}),
+          },
+          body: new URLSearchParams(data).toString(),
+          redirect: 'manual',
+        });
+        const status = resp.status;
+        const body = await resp.text().catch(() => '');
+        if (status !== 404) {
+          results.postProbes[url] = { status, preview: body.slice(0, 500) };
+        }
+      } catch (e) {
+        results.postProbes[url] = { error: e.message };
+      }
+    }
+
+    res.json({ ok: true, squadId, ...results });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// ── MP 余额查询 ─────────────────────────────────────────────────────────────
+app.post('/api/mp/balance', async (req, res) => {
+  try {
+    const session = requireLoggedInSession(req, res);
+    if (!session) return;
+    const { classId } = req.body || {};
+    if (!classId) return res.status(400).json({ error: '缺少班级ID' });
+    const balance = await session.scraper.getMinipinBalance(String(classId));
+    res.json({ status: 'success', ...balance });
+  } catch (error) {
+    console.error('❌ 查询MP余额失败:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── MP 直接发放 ──────────────────────────────────────────────────────────────
 app.post('/api/scraper/submit-minipin', async (req, res) => {
   try {
     const session = requireLoggedInSession(req, res);
@@ -639,7 +741,9 @@ app.post('/api/scraper/submit-minipin', async (req, res) => {
 
     const normalizedRewards = rewards
       .map((reward) => ({
+        studentId: String(reward.studentId || '').trim(),
         studentName: String(reward.studentName || '').trim(),
+        chineseName: String(reward.chineseName || '').trim(),
         aliases: Array.isArray(reward.aliases)
           ? reward.aliases.map((item) => String(item || '').trim()).filter(Boolean)
           : [],
@@ -651,7 +755,7 @@ app.post('/api/scraper/submit-minipin', async (req, res) => {
       return res.status(400).json({ error: '没有可发放的奖励' });
     }
 
-    const result = await session.scraper.submitMinipinRewards(String(classId), normalizedRewards);
+    const result = await session.scraper.submitMinipinDirect(String(classId), normalizedRewards);
     res.json({ status: 'success', ...result });
   } catch (error) {
     console.error('❌ 发放奖励失败:', error.message);
@@ -1415,6 +1519,97 @@ app.get('/api/translate/en-zh', async (req, res) => {
   }
 });
 
+// Tencent Cloud OCR proxy
+const TENCENT_SECRET_ID = process.env.TENCENT_SECRET_ID || '';
+const TENCENT_SECRET_KEY = process.env.TENCENT_SECRET_KEY || '';
+
+function tencentSign(secretKey, date, service, stringToSign) {
+  const kDate = crypto.createHmac('sha256', `TC3${secretKey}`).update(date).digest();
+  const kService = crypto.createHmac('sha256', kDate).update(service).digest();
+  const kSigning = crypto.createHmac('sha256', kService).update('tc3_request').digest();
+  return crypto.createHmac('sha256', kSigning).update(stringToSign).digest('hex');
+}
+
+const TENCENT_OCR_ACTIONS = {
+  Auto: 'GeneralAccurateOCR',
+  GeneralAccurateOCR: 'GeneralAccurateOCR',
+  GeneralBasicOCR: 'GeneralBasicOCR',
+  ExtractDocMulti: 'RecognizeGeneralTextImageWarn',
+};
+
+app.post('/api/tencent-ocr', async (req, res) => {
+  try {
+    const { imageBase64, action = 'Auto', region = 'ap-guangzhou' } = req.body || {};
+    if (!imageBase64) {
+      return res.status(400).json({ error: '缺少图片数据' });
+    }
+
+    const ocrAction = TENCENT_OCR_ACTIONS[action] || 'GeneralAccurateOCR';
+    const service = 'ocr';
+    const host = 'ocr.tencentcloudapi.com';
+    const timestamp = Math.floor(Date.now() / 1000);
+    const date = new Date(timestamp * 1000).toISOString().slice(0, 10);
+
+    const payload = JSON.stringify({ ImageBase64: imageBase64 });
+    const hashedPayload = crypto.createHash('sha256').update(payload).digest('hex');
+
+    const httpRequestMethod = 'POST';
+    const canonicalUri = '/';
+    const canonicalQueryString = '';
+    const canonicalHeaders = `content-type:application/json; charset=utf-8\nhost:${host}\nx-tc-action:${ocrAction.toLowerCase()}\n`;
+    const signedHeaders = 'content-type;host;x-tc-action';
+    const canonicalRequest = `${httpRequestMethod}\n${canonicalUri}\n${canonicalQueryString}\n${canonicalHeaders}\n${signedHeaders}\n${hashedPayload}`;
+
+    const credentialScope = `${date}/${service}/tc3_request`;
+    const hashedCanonicalRequest = crypto.createHash('sha256').update(canonicalRequest).digest('hex');
+    const stringToSign = `TC3-HMAC-SHA256\n${timestamp}\n${credentialScope}\n${hashedCanonicalRequest}`;
+
+    const signature = tencentSign(TENCENT_SECRET_KEY, date, service, stringToSign);
+    const authorization = `TC3-HMAC-SHA256 Credential=${TENCENT_SECRET_ID}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+    const ocrRes = await fetch(`https://${host}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Host': host,
+        'X-TC-Action': ocrAction,
+        'X-TC-Version': '2018-11-19',
+        'X-TC-Timestamp': String(timestamp),
+        'X-TC-Region': region,
+        'Authorization': authorization,
+      },
+      body: payload,
+    });
+
+    const ocrData = await ocrRes.json().catch(() => ({}));
+    const response = ocrData.Response || {};
+
+    if (response.Error) {
+      console.error('❌ 腾讯OCR错误:', response.Error.Code, response.Error.Message);
+      return res.status(502).json({ error: `OCR错误: ${response.Error.Message}` });
+    }
+
+    const textDetections = response.TextDetections || [];
+    const rawText = textDetections.map(d => d.DetectedText || '').join('\n');
+    const words = textDetections.map(d => {
+      const coords = d.ItemPolygon || {};
+      return {
+        text: d.DetectedText || '',
+        confidence: d.Confidence || 90,
+        x0: coords.X || 0,
+        y0: coords.Y || 0,
+        x1: (coords.X || 0) + (coords.Width || 0),
+        y1: (coords.Y || 0) + (coords.Height || 0),
+      };
+    });
+
+    res.json({ rawText, words, action: ocrAction });
+  } catch (error) {
+    console.error('❌ OCR代理失败:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/health', (req, res) => {
   const { session } = ensureSession(req, res);
   res.json({
@@ -1423,6 +1618,22 @@ app.get('/api/health', (req, res) => {
     loginInProgress: session.loginInProgress,
     username: session.username || '',
   });
+});
+
+// ── 前端版本检查 ────────────────────────────────────────────────────────────
+const BUILD_VERSION = (() => {
+  try {
+    const indexPath = path.join(__dirname, '../frontend/dist/index.html');
+    const content = require('fs').readFileSync(indexPath, 'utf8');
+    const match = content.match(/index-([^.]+)\.js/);
+    return match ? match[1] : Date.now().toString(36);
+  } catch {
+    return Date.now().toString(36);
+  }
+})();
+
+app.get('/api/version', (_req, res) => {
+  res.json({ version: BUILD_VERSION });
 });
 
 // 托管前端静态文件
@@ -1439,13 +1650,13 @@ app.use(express.static(distDir, {
   index: 'index.html',
   setHeaders(res, filePath) {
     if (filePath.endsWith('.html')) {
-      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Cache-Control', 'no-store');
     }
   },
 }));
 // SPA fallback — 兼容 Express 5
 app.use((_req, res) => {
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-store');
   res.sendFile(path.join(distDir, 'index.html'));
 });
 

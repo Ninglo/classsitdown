@@ -19,6 +19,11 @@
   flex-shrink: 0;
 }
 
+.dr-home-inline {
+  position: static !important;
+  z-index: auto !important;
+}
+
 .dr-title {
   font-size: 15px;
   font-weight: 700;
